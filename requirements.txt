@@ -1,15 +1,22 @@
-# Telegram Bot
-python-telegram-bot==22.5
+# Telegram Bot Framework
+python-telegram-bot==21.0
 
-# MongoDB - PyMongo Async API
-pymongo==4.15.5
+# MongoDB Async Driver
+motor==3.3.2
+pymongo[srv]==4.6.1
 
 # Environment Variables
-python-dotenv==1.0.1
+python-dotenv==1.0.0
 
-# Date/Time
-python-dateutil==2.9.0
+# Async Support
+asyncio==3.4.3
+aiohttp==3.9.1
 
-# ASGI Server for Render
-uvicorn==0.34.0
-gunicorn==23.0.0
+# Date/Time Utilities
+python-dateutil==2.8.2
+
+# Logging
+colorlog==6.8.0
+
+# Utilities
+pydantic==2.5.3
