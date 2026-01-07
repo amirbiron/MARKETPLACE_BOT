@@ -1,10 +1,9 @@
 """
-MongoDB Database Management with PyMongo Async API
+MongoDB Database Management with Motor (async MongoDB driver)
 """
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
-from pymongo.asynchronous.mongo_client import AsyncMongoClient
-from pymongo.asynchronous.collection import AsyncCollection
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 from pymongo import IndexModel, ASCENDING, DESCENDING
 from config import Config
 import logging
@@ -13,28 +12,28 @@ logger = logging.getLogger(__name__)
 
 
 class Database:
-    """MongoDB Database Manager using PyMongo Async API"""
+    """MongoDB Database Manager using Motor (async MongoDB driver)"""
     
     def __init__(self):
-        self.client: Optional[AsyncMongoClient] = None
+        self.client: Optional[AsyncIOMotorClient] = None
         self.db = None
         
         # Collections
-        self.users: Optional[AsyncCollection] = None
-        self.coupons: Optional[AsyncCollection] = None
-        self.orders: Optional[AsyncCollection] = None
-        self.auctions: Optional[AsyncCollection] = None
-        self.messages: Optional[AsyncCollection] = None
-        self.payouts: Optional[AsyncCollection] = None
-        self.reviews: Optional[AsyncCollection] = None
-        self.favorites: Optional[AsyncCollection] = None
-        self.disputes: Optional[AsyncCollection] = None
-        self.transactions: Optional[AsyncCollection] = None
+        self.users: Optional[AsyncIOMotorCollection] = None
+        self.coupons: Optional[AsyncIOMotorCollection] = None
+        self.orders: Optional[AsyncIOMotorCollection] = None
+        self.auctions: Optional[AsyncIOMotorCollection] = None
+        self.messages: Optional[AsyncIOMotorCollection] = None
+        self.payouts: Optional[AsyncIOMotorCollection] = None
+        self.reviews: Optional[AsyncIOMotorCollection] = None
+        self.favorites: Optional[AsyncIOMotorCollection] = None
+        self.disputes: Optional[AsyncIOMotorCollection] = None
+        self.transactions: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
         try:
-            self.client = AsyncMongoClient(Config.MONGODB_URI)
+            self.client = AsyncIOMotorClient(Config.MONGODB_URI)
             self.db = self.client[Config.DATABASE_NAME]
             
             # Initialize collections
@@ -114,7 +113,7 @@ class Database:
     async def close(self):
         """Close database connection"""
         if self.client:
-            await self.client.close()
+            self.client.close()
             logger.info("MongoDB connection closed")
     
     # User Methods
