@@ -1,5 +1,5 @@
 services:
-  - type: background worker
+  - type: worker
     name: marketplace-bot
     env: python
     buildCommand: pip install -r requirements.txt
