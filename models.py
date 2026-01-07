@@ -1,0 +1,487 @@
+"""
+מודלים לישויות המערכת (Users, Coupons, Orders, etc.)
+"""
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from enum import Enum
+from bson import ObjectId
+
+
+class UserRole(str, Enum):
+    """סוגי משתמשים"""
+    BUYER = "buyer"
+    SELLER_UNVERIFIED = "seller_unverified"
+    SELLER_VERIFIED = "seller_verified"
+    ADMIN = "admin"
+
+
+class CouponStatus(str, Enum):
+    """סטטוסי קופונים"""
+    ACTIVE = "active"
+    SOLD = "sold"
+    EXPIRED = "expired"
+    DELETED = "deleted"
+
+
+class OrderStatus(str, Enum):
+    """סטטוסי הזמנות"""
+    PENDING = "pending"
+    COMPLETED = "completed"
+    DISPUTED = "disputed"
+    REFUNDED = "refunded"
+    CONFIRMED = "confirmed"  # קונה אישר קבלת קופון
+
+
+class AuctionStatus(str, Enum):
+    """סטטוסי מכרזים"""
+    ACTIVE = "active"
+    ENDED = "ended"
+    CANCELLED = "cancelled"
+
+
+class DisputeStatus(str, Enum):
+    """סטטוסי מחלוקות"""
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED_REFUND = "resolved_refund"
+    RESOLVED_NO_REFUND = "resolved_no_refund"
+    CLOSED = "closed"
+
+
+class PayoutStatus(str, Enum):
+    """סטטוסי משיכות"""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    COMPLETED = "completed"
+
+
+class User:
+    """מודל משתמש"""
+    
+    def __init__(
+        self,
+        user_id: int,
+        username: Optional[str] = None,
+        first_name: Optional[str] = None,
+        role: UserRole = UserRole.BUYER,
+        balance: float = 0.0,
+        frozen_balance: float = 0.0,
+        business_name: Optional[str] = None,
+        phone: Optional[str] = None,
+        id_number: Optional[str] = None,
+        is_verified: bool = False,
+        rating_average: float = 0.0,
+        rating_count: int = 0,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.user_id = user_id
+        self.username = username
+        self.first_name = first_name
+        self.role = role
+        self.balance = balance
+        self.frozen_balance = frozen_balance
+        self.business_name = business_name
+        self.phone = phone
+        self.id_number = id_number
+        self.is_verified = is_verified
+        self.rating_average = rating_average
+        self.rating_count = rating_count
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "user_id": self.user_id,
+            "username": self.username,
+            "first_name": self.first_name,
+            "role": self.role.value if isinstance(self.role, Enum) else self.role,
+            "balance": self.balance,
+            "frozen_balance": self.frozen_balance,
+            "business_name": self.business_name,
+            "phone": self.phone,
+            "id_number": self.id_number,
+            "is_verified": self.is_verified,
+            "rating_average": self.rating_average,
+            "rating_count": self.rating_count,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "User":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            user_id=data["user_id"],
+            username=data.get("username"),
+            first_name=data.get("first_name"),
+            role=UserRole(data.get("role", "buyer")),
+            balance=data.get("balance", 0.0),
+            frozen_balance=data.get("frozen_balance", 0.0),
+            business_name=data.get("business_name"),
+            phone=data.get("phone"),
+            id_number=data.get("id_number"),
+            is_verified=data.get("is_verified", False),
+            rating_average=data.get("rating_average", 0.0),
+            rating_count=data.get("rating_count", 0),
+            created_at=data.get("created_at"),
+        )
+
+
+class Coupon:
+    """מודל קופון"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        title: str,
+        category: str,
+        original_price: float,
+        sale_price: float,
+        description: Optional[str] = None,
+        digital_code: Optional[str] = None,
+        status: CouponStatus = CouponStatus.ACTIVE,
+        created_at: Optional[datetime] = None,
+        expires_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.title = title
+        self.category = category
+        self.original_price = original_price
+        self.sale_price = sale_price
+        self.description = description
+        self.digital_code = digital_code
+        self.status = status
+        self.created_at = created_at or datetime.utcnow()
+        self.expires_at = expires_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "seller_id": self.seller_id,
+            "title": self.title,
+            "category": self.category,
+            "original_price": self.original_price,
+            "sale_price": self.sale_price,
+            "description": self.description,
+            "digital_code": self.digital_code,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Coupon":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            title=data["title"],
+            category=data["category"],
+            original_price=data["original_price"],
+            sale_price=data["sale_price"],
+            description=data.get("description"),
+            digital_code=data.get("digital_code"),
+            status=CouponStatus(data.get("status", "active")),
+            created_at=data.get("created_at"),
+            expires_at=data.get("expires_at"),
+        )
+
+
+class Order:
+    """מודל הזמנה"""
+    
+    def __init__(
+        self,
+        buyer_id: int,
+        seller_id: int,
+        coupon_id: ObjectId,
+        price_paid: float,
+        buyer_commission: float,
+        seller_commission: float,
+        status: OrderStatus = OrderStatus.PENDING,
+        created_at: Optional[datetime] = None,
+        confirmed_at: Optional[datetime] = None,
+        dispute_deadline: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.coupon_id = coupon_id
+        self.price_paid = price_paid
+        self.buyer_commission = buyer_commission
+        self.seller_commission = seller_commission
+        self.status = status
+        self.created_at = created_at or datetime.utcnow()
+        self.confirmed_at = confirmed_at
+        self.dispute_deadline = dispute_deadline or (datetime.utcnow() + timedelta(hours=12))
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "buyer_id": self.buyer_id,
+            "seller_id": self.seller_id,
+            "coupon_id": self.coupon_id,
+            "price_paid": self.price_paid,
+            "buyer_commission": self.buyer_commission,
+            "seller_commission": self.seller_commission,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "created_at": self.created_at,
+            "confirmed_at": self.confirmed_at,
+            "dispute_deadline": self.dispute_deadline,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Order":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            buyer_id=data["buyer_id"],
+            seller_id=data["seller_id"],
+            coupon_id=data["coupon_id"],
+            price_paid=data["price_paid"],
+            buyer_commission=data.get("buyer_commission", 0.0),
+            seller_commission=data.get("seller_commission", 0.0),
+            status=OrderStatus(data.get("status", "pending")),
+            created_at=data.get("created_at"),
+            confirmed_at=data.get("confirmed_at"),
+            dispute_deadline=data.get("dispute_deadline"),
+        )
+
+
+class Auction:
+    """מודל מכרז"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        coupon_id: ObjectId,
+        starting_price: float,
+        current_price: Optional[float] = None,
+        current_bidder_id: Optional[int] = None,
+        end_time: Optional[datetime] = None,
+        status: AuctionStatus = AuctionStatus.ACTIVE,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.coupon_id = coupon_id
+        self.starting_price = starting_price
+        self.current_price = current_price or starting_price
+        self.current_bidder_id = current_bidder_id
+        self.end_time = end_time or (datetime.utcnow() + timedelta(days=1))
+        self.status = status
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "seller_id": self.seller_id,
+            "coupon_id": self.coupon_id,
+            "starting_price": self.starting_price,
+            "current_price": self.current_price,
+            "current_bidder_id": self.current_bidder_id,
+            "end_time": self.end_time,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Auction":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            coupon_id=data["coupon_id"],
+            starting_price=data["starting_price"],
+            current_price=data.get("current_price"),
+            current_bidder_id=data.get("current_bidder_id"),
+            end_time=data.get("end_time"),
+            status=AuctionStatus(data.get("status", "active")),
+            created_at=data.get("created_at"),
+        )
+
+
+class Review:
+    """מודל ביקורת"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        buyer_id: int,
+        order_id: ObjectId,
+        rating: int,  # 1-5
+        comment: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.buyer_id = buyer_id
+        self.order_id = order_id
+        self.rating = max(1, min(5, rating))  # מוודא שהדירוג בין 1-5
+        self.comment = comment[:15] if comment else None  # הגבלה ל-15 תווים
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "seller_id": self.seller_id,
+            "buyer_id": self.buyer_id,
+            "order_id": self.order_id,
+            "rating": self.rating,
+            "comment": self.comment,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Review":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            buyer_id=data["buyer_id"],
+            order_id=data["order_id"],
+            rating=data["rating"],
+            comment=data.get("comment"),
+            created_at=data.get("created_at"),
+        )
+
+
+class Dispute:
+    """מודל מחלוקת"""
+    
+    def __init__(
+        self,
+        order_id: ObjectId,
+        buyer_id: int,
+        seller_id: int,
+        reason: str,
+        status: DisputeStatus = DisputeStatus.OPEN,
+        admin_notes: Optional[str] = None,
+        resolution: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        resolved_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.order_id = order_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.reason = reason
+        self.status = status
+        self.admin_notes = admin_notes
+        self.resolution = resolution
+        self.created_at = created_at or datetime.utcnow()
+        self.resolved_at = resolved_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "order_id": self.order_id,
+            "buyer_id": self.buyer_id,
+            "seller_id": self.seller_id,
+            "reason": self.reason,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "admin_notes": self.admin_notes,
+            "resolution": self.resolution,
+            "created_at": self.created_at,
+            "resolved_at": self.resolved_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Dispute":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            order_id=data["order_id"],
+            buyer_id=data["buyer_id"],
+            seller_id=data["seller_id"],
+            reason=data["reason"],
+            status=DisputeStatus(data.get("status", "open")),
+            admin_notes=data.get("admin_notes"),
+            resolution=data.get("resolution"),
+            created_at=data.get("created_at"),
+            resolved_at=data.get("resolved_at"),
+        )
+
+
+class Payout:
+    """מודל משיכת כספים"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        amount: float,
+        commission: float,
+        net_amount: float,
+        status: PayoutStatus = PayoutStatus.PENDING,
+        created_at: Optional[datetime] = None,
+        processed_at: Optional[datetime] = None,
+        admin_notes: Optional[str] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.amount = amount
+        self.commission = commission
+        self.net_amount = net_amount
+        self.status = status
+        self.created_at = created_at or datetime.utcnow()
+        self.processed_at = processed_at
+        self.admin_notes = admin_notes
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "seller_id": self.seller_id,
+            "amount": self.amount,
+            "commission": self.commission,
+            "net_amount": self.net_amount,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "created_at": self.created_at,
+            "processed_at": self.processed_at,
+            "admin_notes": self.admin_notes,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Payout":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            amount=data["amount"],
+            commission=data.get("commission", 0.0),
+            net_amount=data.get("net_amount", 0.0),
+            status=PayoutStatus(data.get("status", "pending")),
+            created_at=data.get("created_at"),
+            processed_at=data.get("processed_at"),
+            admin_notes=data.get("admin_notes"),
+        )
