@@ -1,0 +1,15 @@
+# Telegram Bot
+python-telegram-bot==22.5
+
+# MongoDB - PyMongo Async API
+pymongo==4.15.5
+
+# Environment Variables
+python-dotenv==1.0.1
+
+# Date/Time
+python-dateutil==2.9.0
+
+# ASGI Server for Render
+uvicorn==0.34.0
+gunicorn==23.0.0
