@@ -2,6 +2,8 @@
 Marketplace Telegram Bot - Main Entry Point
 """
 import logging
+import os
+import sys
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -25,6 +27,8 @@ from handlers.chat_handlers import get_chat_handlers
 from handlers.dispute_handlers import get_dispute_handlers
 from handlers.payment_handlers import get_payment_handlers
 from handlers.support_handlers import get_support_handlers
+from services.health_server import start_health_server
+from services.service_lock import LockSettings, MongoServiceLock
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -304,4 +308,21 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # Start tiny HTTP server for Render health checks (only if PORT is set).
+    # Keep it alive even while waiting for the distributed lock.
+    lock: MongoServiceLock | None = None
+    try:
+        settings = LockSettings.from_env(default_service_id="marketplace-bot")
+        lock = MongoServiceLock(Config.MONGODB_URI, Config.DATABASE_NAME, settings)
+        start_health_server(lock)
+
+        # Block here until we hold the lease, so only one instance polls Telegram.
+        lock.wait_until_acquired()
+
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        logger.error(f"Fatal startup error: {e}", exc_info=True)
+        # Exit non-zero so the platform can restart if desired.
+        sys.exit(1)
