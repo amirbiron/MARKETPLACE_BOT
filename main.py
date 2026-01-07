@@ -24,6 +24,7 @@ from handlers.auction_handlers import get_auction_handlers
 from handlers.chat_handlers import get_chat_handlers
 from handlers.dispute_handlers import get_dispute_handlers
 from handlers.payment_handlers import get_payment_handlers
+from handlers.support_handlers import get_support_handlers
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -241,6 +242,9 @@ def main():
     # Buyer handlers
     application.add_handler(CommandHandler("buy", BuyerHandlers.browse_categories))
     application.add_handler(CommandHandler("myorders", BuyerHandlers.show_my_orders))
+    application.add_handler(CommandHandler("search", BuyerHandlers.start_search))
+    application.add_handler(CommandHandler("filters", BuyerHandlers.show_search_filters))
+    application.add_handler(CommandHandler("hot_coupons", BuyerHandlers.show_hot_coupons))
     
     # Seller handlers
     application.add_handler(CommandHandler("upload", SellerHandlers.start_coupon_upload))
@@ -285,6 +289,10 @@ def main():
 
     # Payment handlers
     for handler in get_payment_handlers():
+        application.add_handler(handler)
+
+    # Support handlers
+    for handler in get_support_handlers():
         application.add_handler(handler)
 
     # Error handler

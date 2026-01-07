@@ -39,6 +39,7 @@ class BackgroundScheduler:
             asyncio.create_task(self._cleanup_favorites()),
             asyncio.create_task(self._check_expired_coupons()),
             asyncio.create_task(self._notify_auction_ending()),
+            asyncio.create_task(self._notify_expiring_coupons()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -239,6 +240,56 @@ class BackgroundScheduler:
                 logger.error(f"Error notifying auction ending: {e}")
 
             await asyncio.sleep(3600)  # שעה
+
+    async def _notify_expiring_coupons(self):
+        """התראה למוכרים על קופונים שעומדים לפוג - כל 12 שעות"""
+        while self.running:
+            try:
+                logger.debug("Checking expiring coupons...")
+
+                # מציאת קופונים שפוגים בעוד 3 ימים או פחות
+                expiry_warning_time = datetime.utcnow() + timedelta(days=3)
+
+                coupons = await db.coupons.find({
+                    "status": "active",
+                    "expires_at": {
+                        "$gte": datetime.utcnow(),
+                        "$lte": expiry_warning_time
+                    },
+                    "notified_expiring": {"$ne": True}
+                }).to_list(length=None)
+
+                for coupon in coupons:
+                    # חישוב ימים שנותרו
+                    time_left = coupon["expires_at"] - datetime.utcnow()
+                    days_left = int(time_left.total_seconds() // 86400)
+
+                    # שליחת התראה למוכר
+                    await NotificationService.send_notification(
+                        user_id=coupon["seller_id"],
+                        title="⚠️ קופון עומד לפוג",
+                        message=f"הקופון '{coupon.get('title', 'ללא שם')}' יפוג בעוד {days_left} ימים!\n\n"
+                                f"שקול להאריך את תוקפו או לעדכן את המחיר.",
+                        notification_type="coupon_expiring",
+                        data={
+                            "coupon_id": str(coupon["_id"]),
+                            "days_left": days_left
+                        }
+                    )
+
+                    # סימון שנשלחה התראה
+                    await db.coupons.update_one(
+                        {"_id": coupon["_id"]},
+                        {"$set": {"notified_expiring": True}}
+                    )
+
+                if coupons:
+                    logger.info(f"Sent {len(coupons)} coupon expiry notifications to sellers")
+
+            except Exception as e:
+                logger.error(f"Error notifying expiring coupons: {e}")
+
+            await asyncio.sleep(43200)  # 12 שעות
 
 
 # יצירת instance גלובלי
