@@ -16,4 +16,4 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: PYTHON_VERSION
-        value: 3.11.7
+        value: 3.11.10
