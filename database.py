@@ -24,6 +24,7 @@ class Database:
         self.orders: Optional[AsyncIOMotorCollection] = None
         self.auctions: Optional[AsyncIOMotorCollection] = None
         self.messages: Optional[AsyncIOMotorCollection] = None
+        self.notifications: Optional[AsyncIOMotorCollection] = None
         self.payouts: Optional[AsyncIOMotorCollection] = None
         self.reviews: Optional[AsyncIOMotorCollection] = None
         self.favorites: Optional[AsyncIOMotorCollection] = None
@@ -42,6 +43,7 @@ class Database:
             self.orders = self.db["orders"]
             self.auctions = self.db["auctions"]
             self.messages = self.db["messages"]
+            self.notifications = self.db["notifications"]
             self.payouts = self.db["payouts"]
             self.reviews = self.db["reviews"]
             self.favorites = self.db["favorites"]
@@ -90,6 +92,13 @@ class Database:
                 IndexModel([("status", ASCENDING)]),
                 IndexModel([("end_time", ASCENDING)]),
                 IndexModel([("seller_id", ASCENDING)])
+            ])
+
+            # Notifications indexes
+            await self.notifications.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("user_id", ASCENDING), ("read", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("read", ASCENDING), ("created_at", DESCENDING)])
             ])
             
             # Reviews indexes
