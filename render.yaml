@@ -1,8 +1,7 @@
 services:
-  - type: web
+  - type: background worker
     name: marketplace-bot
     env: python
-    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
