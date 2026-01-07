@@ -361,22 +361,220 @@ class BuyerHandlers:
         """קליטת דירוג"""
         query = update.callback_query
         await query.answer()
-        
+
         parts = query.data.split("_")
         rating = int(parts[1])
         order_id = parts[2]
-        
+
         context.user_data['rating_score'] = rating
         context.user_data['rating_order_id'] = order_id
-        
+
         text = f"""
 ⭐ דירוג: {get_star_rating(rating)}
 
 📝 כעת, שלח הערה קצרה על המוכר (עד 15 תווים)
 או לחץ "דלג" לסיום ללא הערה.
 """
-        
+
         await query.edit_message_text(text, parse_mode="Markdown")
         await query.message.reply_text("⏳ ממתין להערה או /skip לדילוג...")
-        
+
         return SEARCH_TEXT  # Conversation state
+
+    @staticmethod
+    async def show_hot_coupons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת קופונים חמים (נמכרים ביותר)"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+
+        # קבלת קופונים חמים
+        hot_coupons = await CouponService.get_hot_coupons(limit=10)
+
+        if not hot_coupons:
+            text = "🔥 *קופונים חמים*\n\nאין מספיק נתונים עדיין.\nחזור אחרי כמה ימים!"
+            keyboard = Keyboards.back_button()
+
+            if query:
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            return
+
+        # בניית רשימת קופונים
+        items = []
+        for coupon in hot_coupons:
+            discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
+            seller = await UserService.get_user(coupon.seller_id)
+            seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+            rating_str = get_star_rating(seller.rating_average) if seller else "⭐ חדש"
+
+            text_item = f"🔥 {coupon.title} - {format_price(coupon.sale_price)} ({discount}% הנחה) | {seller_name} {rating_str}"
+            items.append((text_item, f"coupon_{str(coupon._id)}"))
+
+        keyboard = Keyboards.pagination_keyboard(items, 0, 1, "hot_coupons")
+        text = "🔥 *קופונים חמים*\n\nהקופונים הנמכרים ביותר השבוע:"
+
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def start_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """התחלת חיפוש"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+
+        text = """
+🔍 *חיפוש קופונים*
+
+שלח מילת חיפוש (למשל: "מסעדה", "ספא", "קולנוע")
+או השתמש ב-/filters לחיפוש מתקדם עם פילטרים.
+
+לביטול: /cancel
+"""
+
+        if query:
+            await query.edit_message_text(text, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, parse_mode="Markdown")
+
+        return SEARCH_TEXT
+
+    @staticmethod
+    async def process_search_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """עיבוד שאילתת חיפוש"""
+        search_text = update.message.text
+
+        # חיפוש קופונים
+        coupons, total = await CouponService.search_coupons(search_text, page=0)
+
+        if not coupons:
+            await update.message.reply_text(
+                f"😔 לא נמצאו תוצאות עבור: *{search_text}*\n\n"
+                f"נסה מילים אחרות או השתמש ב-/filters",
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+
+        # בניית רשימת תוצאות
+        items = []
+        for coupon in coupons[:10]:
+            discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
+            seller = await UserService.get_user(coupon.seller_id)
+            seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+
+            text_item = f"{coupon.title} - {format_price(coupon.sale_price)} ({discount}% הנחה) | {seller_name}"
+            items.append((text_item, f"coupon_{str(coupon._id)}"))
+
+        keyboard = Keyboards.pagination_keyboard(items, 0, 1, "search")
+        text = f"🔍 *תוצאות חיפוש עבור: {search_text}*\n\nנמצאו {total} תוצאות:"
+
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        return ConversationHandler.END
+
+    @staticmethod
+    async def show_search_filters(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת פילטרים לחיפוש מתקדם"""
+        text = """
+🔍 *חיפוש מתקדם*
+
+בחר פילטרים:
+• קטגוריה - בחר קטגוריה ספציפית
+• טווח מחיר - הגדר מחיר מינימלי/מקסימלי
+• אחוז הנחה - מינימום X% הנחה
+• דירוג מוכר - רק מוכרים מעל X כוכבים
+
+לחץ על הכפתורים מטה להגדרת הפילטרים:
+"""
+
+        keyboard = [
+            [{"text": "🗂️ בחר קטגוריה", "callback_data": "filter_category"}],
+            [{"text": "💰 טווח מחיר", "callback_data": "filter_price"}],
+            [{"text": "🏷️ אחוז הנחה מינימלי", "callback_data": "filter_discount"}],
+            [{"text": "⭐ דירוג מוכר מינימלי", "callback_data": "filter_rating"}],
+            [{"text": "🔍 חפש עם הפילטרים", "callback_data": "apply_filters"}],
+            [{"text": "🔙 חזרה", "callback_data": "back"}]
+        ]
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(btn["text"], callback_data=btn["callback_data"])] for btn in keyboard])
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+    @staticmethod
+    async def apply_search_filters(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """החלת פילטרי חיפוש"""
+        query = update.callback_query
+        await query.answer()
+
+        # קבלת פילטרים מהקונטקסט
+        search_text = context.user_data.get("filter_search_text")
+        category = context.user_data.get("filter_category")
+        min_price = context.user_data.get("filter_min_price")
+        max_price = context.user_data.get("filter_max_price")
+        min_discount = context.user_data.get("filter_min_discount")
+        min_seller_rating = context.user_data.get("filter_min_rating")
+
+        # חיפוש עם פילטרים
+        coupons, total = await CouponService.advanced_search(
+            search_text=search_text,
+            category=category,
+            min_price=min_price,
+            max_price=max_price,
+            min_discount=min_discount,
+            min_seller_rating=min_seller_rating,
+            page=0
+        )
+
+        if not coupons:
+            await query.edit_message_text(
+                "😔 לא נמצאו תוצאות עם הפילטרים שנבחרו.\n\nנסה להרחיב את הפילטרים.",
+                reply_markup=Keyboards.back_button()
+            )
+            return
+
+        # בניית רשימת תוצאות
+        items = []
+        for coupon in coupons[:10]:
+            discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
+            seller = await UserService.get_user(coupon.seller_id)
+            seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+
+            text_item = f"{coupon.title} - {format_price(coupon.sale_price)} ({discount}% הנחה) | {seller_name}"
+            items.append((text_item, f"coupon_{str(coupon._id)}"))
+
+        keyboard = Keyboards.pagination_keyboard(items, 0, 1, "filtered_search")
+
+        # בניית טקסט פילטרים
+        filters_applied = []
+        if search_text:
+            filters_applied.append(f"טקסט: {search_text}")
+        if category:
+            filters_applied.append(f"קטגוריה: {category}")
+        if min_price:
+            filters_applied.append(f"מחיר מינימלי: {format_price(min_price)}")
+        if max_price:
+            filters_applied.append(f"מחיר מקסימלי: {format_price(max_price)}")
+        if min_discount:
+            filters_applied.append(f"הנחה: {min_discount}%+")
+        if min_seller_rating:
+            filters_applied.append(f"דירוג: {min_seller_rating}⭐+")
+
+        filters_text = "\n• ".join(filters_applied) if filters_applied else "אין"
+
+        text = f"""
+🔍 *תוצאות חיפוש מתקדם*
+
+📋 פילטרים:
+• {filters_text}
+
+נמצאו {total} תוצאות:
+"""
+
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")

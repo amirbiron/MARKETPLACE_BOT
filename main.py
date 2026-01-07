@@ -20,6 +20,11 @@ from keyboards import Keyboards
 from handlers.buyer_handlers import BuyerHandlers
 from handlers.seller_handlers import SellerHandlers
 from handlers.admin_handlers import AdminHandlers
+from handlers.auction_handlers import get_auction_handlers
+from handlers.chat_handlers import get_chat_handlers
+from handlers.dispute_handlers import get_dispute_handlers
+from handlers.payment_handlers import get_payment_handlers
+from handlers.support_handlers import get_support_handlers
 
 # הגדרת לוגינג
 logging.basicConfig(
@@ -188,13 +193,33 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application: Application) -> None:
     """אתחול לאחר הרצת הבוט"""
-    await Database.connect()
+    from database import db
+    from services.background_scheduler import scheduler
+
+    # חיבור למסד נתונים
+    await db.connect()
+    logger.info("Database connected successfully")
+
+    # הפעלת background scheduler
+    await scheduler.start()
+    logger.info("Background scheduler started")
+
     logger.info("Bot initialized successfully")
 
 
 async def post_shutdown(application: Application) -> None:
     """ניקוי לפני סגירת הבוט"""
-    await Database.disconnect()
+    from database import db
+    from services.background_scheduler import scheduler
+
+    # עצירת scheduler
+    await scheduler.stop()
+    logger.info("Background scheduler stopped")
+
+    # ניתוק ממסד נתונים
+    await db.close()
+    logger.info("Database connection closed")
+
     logger.info("Bot shutdown complete")
 
 
@@ -217,6 +242,9 @@ def main():
     # Buyer handlers
     application.add_handler(CommandHandler("buy", BuyerHandlers.browse_categories))
     application.add_handler(CommandHandler("myorders", BuyerHandlers.show_my_orders))
+    application.add_handler(CommandHandler("search", BuyerHandlers.start_search))
+    application.add_handler(CommandHandler("filters", BuyerHandlers.show_search_filters))
+    application.add_handler(CommandHandler("hot_coupons", BuyerHandlers.show_hot_coupons))
     
     # Seller handlers
     application.add_handler(CommandHandler("upload", SellerHandlers.start_coupon_upload))
@@ -246,7 +274,27 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_disputes, pattern="^admin_disputes$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.add_balance_to_user, pattern="^admin_add_balance$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_system_stats, pattern="^admin_stats$"))
-    
+
+    # Auction handlers
+    for handler in get_auction_handlers():
+        application.add_handler(handler)
+
+    # Chat handlers
+    for handler in get_chat_handlers():
+        application.add_handler(handler)
+
+    # Dispute handlers
+    for handler in get_dispute_handlers():
+        application.add_handler(handler)
+
+    # Payment handlers
+    for handler in get_payment_handlers():
+        application.add_handler(handler)
+
+    # Support handlers
+    for handler in get_support_handlers():
+        application.add_handler(handler)
+
     # Error handler
     application.add_error_handler(error_handler)
     

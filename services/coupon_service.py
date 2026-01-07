@@ -284,11 +284,80 @@ class CouponService:
         return hot_coupons
     
     @staticmethod
+    async def advanced_search(
+        search_text: Optional[str] = None,
+        category: Optional[str] = None,
+        min_price: Optional[float] = None,
+        max_price: Optional[float] = None,
+        min_discount: Optional[int] = None,  # אחוז הנחה מינימלי
+        min_seller_rating: Optional[float] = None,
+        page: int = 0,
+        limit: int = Config.ITEMS_PER_PAGE
+    ) -> Tuple[List[Coupon], int]:
+        """חיפוש מתקדם עם פילטרים"""
+        coupons = await database.get_coupons_collection()
+        users = await database.get_users_collection()
+
+        # בניית query
+        query = {"status": CouponStatus.ACTIVE.value}
+
+        # חיפוש טקסט חופשי
+        if search_text:
+            query["$or"] = [
+                {"title": {"$regex": search_text, "$options": "i"}},
+                {"description": {"$regex": search_text, "$options": "i"}}
+            ]
+
+        # פילטר קטגוריה
+        if category:
+            query["category"] = category
+
+        # פילטר טווח מחיר
+        if min_price is not None:
+            query["sale_price"] = query.get("sale_price", {})
+            query["sale_price"]["$gte"] = min_price
+
+        if max_price is not None:
+            query["sale_price"] = query.get("sale_price", {})
+            query["sale_price"]["$lte"] = max_price
+
+        # פילטר אחוז הנחה
+        if min_discount is not None:
+            # נצטרך לחשב את זה בצד הקליינט או להשתמש באגרגציה
+            pass
+
+        # שלב 1: קבלת קופונים
+        cursor = coupons.find(query).skip(page * limit).limit(limit)
+
+        results = []
+        async for coupon_data in cursor:
+            coupon = Coupon.from_dict(coupon_data)
+
+            # פילטר אחוז הנחה
+            if min_discount is not None:
+                discount_pct = ((coupon.original_price - coupon.sale_price) / coupon.original_price) * 100
+                if discount_pct < min_discount:
+                    continue
+
+            # פילטר דירוג מוכר
+            if min_seller_rating is not None:
+                seller = await users.find_one({"user_id": coupon.seller_id})
+                if not seller or seller.get("rating_average", 0) < min_seller_rating:
+                    continue
+
+            results.append(coupon)
+
+        # ספירת סה"כ תוצאות
+        total = await coupons.count_documents(query)
+
+        return results, total
+
+    @staticmethod
     async def check_expiration() -> int:
         """בדיקה וסימון קופונים שפג תוקפם"""
         coupons = await database.get_coupons_collection()
         now = datetime.utcnow()
-        
+
         result = await coupons.update_many(
             {
                 "status": CouponStatus.ACTIVE.value,

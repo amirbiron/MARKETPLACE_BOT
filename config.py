@@ -30,18 +30,27 @@ class Config:
     DEBUG: bool = ENVIRONMENT == "development"
     
     # Marketplace Settings
-    BUYER_COMMISSION: float = 0.02  # 2% עמלת קונה
-    VERIFIED_SELLER_COMMISSION: float = 0.03  # 3% מוכר מאומת
-    UNVERIFIED_SELLER_COMMISSION: float = 0.05  # 5% מוכר לא מאומת
+    BUYER_COMMISSION_RATE: float = 0.02  # 2% עמלת קונה
+    VERIFIED_SELLER_COMMISSION_RATE: float = 0.03  # 3% מוכר מאומת
+    UNVERIFIED_SELLER_COMMISSION_RATE: float = 0.05  # 5% מוכר לא מאומת
+    SELLER_COMMISSION_RATE: float = 0.04  # 4% עמלה כללית למוכר
     WITHDRAWAL_COMMISSION: float = 0.01  # 1% עמלת משיכה
     MIN_WITHDRAWAL_AMOUNT: int = 200  # מינימום 200₪ למשיכה
+    MIN_PAYOUT_AMOUNT: int = 200  # מינימום למשיכה
     BALANCE_FREEZE_HOURS: int = 24  # הקפאת כספים למוכר
     REPORT_WINDOW_HOURS: int = 12  # חלון דיווח לקונה
+    DISPUTE_WINDOW_HOURS: int = 12  # חלון זמן לפתיחת מחלוקת
     DAILY_COUPON_LIMIT_UNVERIFIED: int = 10  # הגבלת קופונים ליום (לא מאומת)
-    
+
+    # Auction Settings
+    MIN_BID_INCREMENT: float = 5.0  # תוספת מינימלית להצעה במכרז
+
     # Pagination
     ITEMS_PER_PAGE: int = 5  # פריטים לעמוד בדפדוף
     REVIEWS_PER_PAGE: int = 5  # ביקורות לעמוד
+
+    # Database
+    DATABASE_NAME: str = MONGODB_DB_NAME
     
     @classmethod
     def validate(cls) -> bool:
