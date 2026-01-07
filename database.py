@@ -54,6 +54,18 @@ class Database:
             await self.client.admin.command('ping')
             logger.info("Successfully connected to MongoDB")
             
+            # Migration/compat: older versions created a unique index on `telegram_id`
+            # which breaks inserts that only set `user_id` (missing `telegram_id` becomes
+            # a duplicate null in a non-sparse unique index). Drop it if present.
+            try:
+                existing = await self.users.index_information()
+                telegram_idx = existing.get("telegram_id_1")
+                if telegram_idx and telegram_idx.get("unique") and not telegram_idx.get("sparse"):
+                    await self.users.drop_index("telegram_id_1")
+                    logger.info("Dropped legacy unique index users.telegram_id_1")
+            except Exception as e:
+                logger.warning(f"Failed to check/drop legacy telegram_id index: {e}")
+
             # Create indexes
             await self._create_indexes()
             
@@ -66,9 +78,11 @@ class Database:
         try:
             # Users indexes
             await self.users.create_indexes([
-                IndexModel([("telegram_id", ASCENDING)], unique=True),
+                # NOTE: the codebase uses `user_id` (Telegram ID) as the primary key.
+                # Keep this unique to prevent duplicate user documents.
+                IndexModel([("user_id", ASCENDING)], unique=True),
                 IndexModel([("role", ASCENDING)]),
-                IndexModel([("verified", ASCENDING)])
+                IndexModel([("is_verified", ASCENDING)])
             ])
             
             # Coupons indexes
@@ -616,3 +630,41 @@ class Database:
 
 # Global database instance
 db = Database()
+
+
+async def _ensure_connected() -> None:
+    """
+    Backwards-compatible connection helper.
+
+    Some parts of the codebase still import the `database` module and expect
+    `get_*_collection()` helpers. Ensure the global `db` is connected first.
+    """
+    if db.client is None or db.db is None:
+        await db.connect()
+
+
+# ---- Backwards-compatible collection helpers (used across services/handlers) ----
+
+async def get_users_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.users
+
+
+async def get_coupons_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.coupons
+
+
+async def get_orders_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.orders
+
+
+async def get_payouts_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.payouts
+
+
+async def get_disputes_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.disputes
