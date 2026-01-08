@@ -358,8 +358,12 @@ async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "⚙️ הגדרות":
         return await settings_menu(update, context)
 
+    # System management (admin only)
+    if text == "🔧 ניהול מערכת":
+        return await AdminHandlers.system_management_menu(update, context)
+
     # Not implemented yet
-    if text in {"⭐ המועדפים שלי", "🔧 ניהול מערכת"}:
+    if text in {"⭐ המועדפים שלי"}:
         return await update.message.reply_text("⏳ הפיצ'ר הזה עדיין בפיתוח. בקרוב!")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -533,6 +537,53 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_disputes, pattern="^admin_disputes$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.add_balance_to_user, pattern="^admin_add_balance$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_system_stats, pattern="^admin_stats$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_pending_deposits, pattern="^admin_deposit_requests$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.admin_menu, pattern="^admin_menu$"))
+    
+    # System management callbacks (admin)
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_users, pattern="^sys_manage_users$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_sellers, pattern="^sys_manage_sellers$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_coupons, pattern="^sys_manage_coupons$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_user_details, pattern="^sys_user_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.block_user, pattern="^sys_block_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.unblock_user, pattern="^sys_unblock_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_coupon_details, pattern="^sys_coupon_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.delete_coupon, pattern="^sys_del_coupon_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_logs, pattern="^sys_view_logs$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.system_settings, pattern="^sys_settings$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.sys_back_handler, pattern="^sys_back$"))
+    
+    # Broadcast conversation
+    from handlers.admin_handlers import BROADCAST_MESSAGE, ADD_BALANCE_AMOUNT
+    broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_broadcast, pattern="^sys_broadcast$")],
+        states={
+            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_broadcast)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(broadcast_conv)
+    
+    # Add balance to user conversation
+    add_balance_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_add_balance_to_user, pattern="^sys_addbal_")],
+        states={
+            ADD_BALANCE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_add_balance)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(add_balance_conv)
+    
+    # Send message to user conversation
+    from handlers.admin_handlers import SEND_USER_MESSAGE
+    send_msg_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_send_user_message, pattern="^sys_msg_")],
+        states={
+            SEND_USER_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_send_user_message)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(send_msg_conv)
 
     # Auction handlers
     for handler in get_auction_handlers():

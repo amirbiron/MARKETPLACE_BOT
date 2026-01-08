@@ -194,3 +194,45 @@ class Keyboards:
     def back_button() -> InlineKeyboardMarkup:
         """כפתור חזרה פשוט"""
         return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 חזרה", callback_data="back")]])
+    
+    @staticmethod
+    def admin_main_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת תפריט אדמין ראשי"""
+        keyboard = [
+            [InlineKeyboardButton("👥 בקשות מוכרים", callback_data="admin_seller_requests")],
+            [InlineKeyboardButton("💸 בקשות משיכה", callback_data="admin_payout_requests")],
+            [InlineKeyboardButton("💰 בקשות הפקדה", callback_data="admin_deposit_requests")],
+            [InlineKeyboardButton("⚖️ מחלוקות פתוחות", callback_data="admin_disputes")],
+            [InlineKeyboardButton("📩 פניות תמיכה", callback_data="admin_support_tickets")],
+            [InlineKeyboardButton("💵 הוספת יתרה", callback_data="admin_add_balance")],
+            [InlineKeyboardButton("📊 סטטיסטיקות", callback_data="admin_stats")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def admin_seller_request_keyboard(seller_id: int) -> InlineKeyboardMarkup:
+        """מקלדת לטיפול בבקשת מוכר"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ אשר", callback_data=f"approve_seller_{seller_id}"),
+                InlineKeyboardButton("❌ דחה", callback_data=f"reject_seller_{seller_id}")
+            ],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="admin_seller_requests")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def system_management_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת ניהול מערכת"""
+        keyboard = [
+            [InlineKeyboardButton("👥 ניהול משתמשים", callback_data="sys_manage_users")],
+            [InlineKeyboardButton("🏪 ניהול מוכרים", callback_data="sys_manage_sellers")],
+            [InlineKeyboardButton("🎫 ניהול קופונים", callback_data="sys_manage_coupons")],
+            [InlineKeyboardButton("📢 שליחת הודעה לכולם", callback_data="sys_broadcast")],
+            [InlineKeyboardButton("🔒 חסימת משתמש", callback_data="sys_block_user")],
+            [InlineKeyboardButton("📋 לוגים אחרונים", callback_data="sys_view_logs")],
+            [InlineKeyboardButton("⚙️ הגדרות מערכת", callback_data="sys_settings")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
