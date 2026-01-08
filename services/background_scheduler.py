@@ -116,7 +116,7 @@ class BackgroundScheduler:
             await asyncio.sleep(86400)  # יום
 
     async def _check_dispute_deadlines(self):
-        """בדיקת תזכורות למועד דיווח על בעיה - כל שעתיים"""
+        """בדיקת תזכורות למועד דיווח על בעיה - כל 30 דקות"""
         while self.running:
             try:
                 logger.debug("Checking dispute deadlines...")
@@ -136,10 +136,10 @@ class BackgroundScheduler:
                 for order in orders:
                     # חישוב שעות שנותרו
                     time_left = order["dispute_deadline"] - datetime.utcnow()
-                    hours_left = int(time_left.total_seconds() // 3600)
+                    hours_left = max(1, int(time_left.total_seconds() // 3600))
 
-                    # שליחת התראה
-                    await NotificationService.notify_dispute_deadline(
+                    # שליחת התראה עם כפתורים
+                    await NotificationService.notify_report_window_closing(
                         buyer_id=order["buyer_id"],
                         order_id=str(order["_id"]),
                         hours_left=hours_left
@@ -152,12 +152,12 @@ class BackgroundScheduler:
                     )
 
                 if orders:
-                    logger.info(f"Sent {len(orders)} dispute deadline reminders")
+                    logger.info(f"Sent {len(orders)} report window closing reminders")
 
             except Exception as e:
                 logger.error(f"Error checking dispute deadlines: {e}")
 
-            await asyncio.sleep(7200)  # 2 שעות
+            await asyncio.sleep(1800)  # 30 דקות
 
     async def _cleanup_favorites(self):
         """ניקוי מועדפים של קופונים שנמחקו - כל יום"""
@@ -199,48 +199,101 @@ class BackgroundScheduler:
             await asyncio.sleep(86400)  # יום
 
     async def _notify_auction_ending(self):
-        """התראה על מכרזים שמסתיימים בקרוב - כל שעה"""
+        """התראה על מכרזים שמסתיימים בקרוב - כל 15 דקות"""
         while self.running:
             try:
                 logger.debug("Checking auctions ending soon...")
 
-                # מציאת מכרזים שמסתיימים בעוד 2 שעות
-                warning_time = datetime.utcnow() + timedelta(hours=2)
+                # === התראה 2 שעות לפני סיום ===
+                warning_time_2h = datetime.utcnow() + timedelta(hours=2)
 
-                auctions = await db.auctions.find({
+                auctions_2h = await db.auctions.find({
                     "status": "active",
                     "end_time": {
                         "$gte": datetime.utcnow(),
-                        "$lte": warning_time
+                        "$lte": warning_time_2h
                     },
-                    "notified_ending": {"$ne": True}
+                    "notified_ending_2h": {"$ne": True}
                 }).to_list(length=None)
 
-                for auction in auctions:
-                    # התראה למוביל הנוכחי
-                    if auction.get("current_bidder_id"):
-                        time_left = auction["end_time"] - datetime.utcnow()
-                        hours_left = int(time_left.total_seconds() // 3600)
+                for auction in auctions_2h:
+                    time_left = auction["end_time"] - datetime.utcnow()
+                    minutes_left = int(time_left.total_seconds() // 60)
 
-                        await NotificationService.notify_auction_ending_soon(
-                            user_id=auction["current_bidder_id"],
-                            auction_id=str(auction["_id"]),
-                            hours_left=hours_left
-                        )
-
-                    # סימון שנשלחה התראה
-                    await db.auctions.update_one(
-                        {"_id": auction["_id"]},
-                        {"$set": {"notified_ending": True}}
+                    # קבלת כל המשתתפים במכרז (כל מי שהציע)
+                    bidders = await db.auction_bids.distinct(
+                        "bidder_id",
+                        {"auction_id": auction["_id"]}
                     )
 
-                if auctions:
-                    logger.info(f"Sent {len(auctions)} auction ending notifications")
+                    current_leader = auction.get("current_bidder_id")
+
+                    # התראה לכל המשתתפים
+                    for bidder_id in bidders:
+                        is_leading = (bidder_id == current_leader)
+                        await NotificationService.notify_auction_ending_soon(
+                            user_id=bidder_id,
+                            auction_id=str(auction["_id"]),
+                            minutes_left=minutes_left,
+                            is_leading=is_leading
+                        )
+
+                    # סימון שנשלחה התראה 2 שעות
+                    await db.auctions.update_one(
+                        {"_id": auction["_id"]},
+                        {"$set": {"notified_ending_2h": True}}
+                    )
+
+                if auctions_2h:
+                    logger.info(f"Sent 2-hour auction ending notifications for {len(auctions_2h)} auctions")
+
+                # === התראה 30 דקות לפני סיום ===
+                warning_time_30m = datetime.utcnow() + timedelta(minutes=30)
+
+                auctions_30m = await db.auctions.find({
+                    "status": "active",
+                    "end_time": {
+                        "$gte": datetime.utcnow(),
+                        "$lte": warning_time_30m
+                    },
+                    "notified_ending_30m": {"$ne": True}
+                }).to_list(length=None)
+
+                for auction in auctions_30m:
+                    time_left = auction["end_time"] - datetime.utcnow()
+                    minutes_left = int(time_left.total_seconds() // 60)
+
+                    # קבלת כל המשתתפים במכרז
+                    bidders = await db.auction_bids.distinct(
+                        "bidder_id",
+                        {"auction_id": auction["_id"]}
+                    )
+
+                    current_leader = auction.get("current_bidder_id")
+
+                    # התראה לכל המשתתפים
+                    for bidder_id in bidders:
+                        is_leading = (bidder_id == current_leader)
+                        await NotificationService.notify_auction_ending_soon(
+                            user_id=bidder_id,
+                            auction_id=str(auction["_id"]),
+                            minutes_left=minutes_left,
+                            is_leading=is_leading
+                        )
+
+                    # סימון שנשלחה התראה 30 דקות
+                    await db.auctions.update_one(
+                        {"_id": auction["_id"]},
+                        {"$set": {"notified_ending_30m": True}}
+                    )
+
+                if auctions_30m:
+                    logger.info(f"Sent 30-minute auction ending notifications for {len(auctions_30m)} auctions")
 
             except Exception as e:
                 logger.error(f"Error notifying auction ending: {e}")
 
-            await asyncio.sleep(3600)  # שעה
+            await asyncio.sleep(900)  # 15 דקות
 
     async def _notify_expiring_coupons(self):
         """התראה למוכרים על קופונים שעומדים לפוג - כל 12 שעות"""

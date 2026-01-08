@@ -738,6 +738,10 @@ def main():
     application.add_handler(CallbackQueryHandler(BuyerHandlers.add_to_favorites, pattern="^fav_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.remove_from_favorites, pattern="^unfav_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.favorites_pagination, pattern="^favorites_page_"))
+
+    # Notification action handlers (confirm/report from notification)
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_from_notification, pattern="^confirm_from_notif_"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.report_from_notification, pattern="^report_from_notif_"))
     # Rating conversation (rate_ -> rating_ -> comment text)
     rating_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(BuyerHandlers.start_rating, pattern="^rate_")],
