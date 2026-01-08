@@ -4,7 +4,7 @@ Marketplace Telegram Bot - Main Entry Point
 import logging
 import os
 import sys
-from telegram import Update
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -72,7 +72,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 בחר פעולה מהכפתורים:
 """
     
+    # הסרת מקלדת ראשית ישנה (אם קיימת) והצגת כפתורי אינליין
     keyboard = Keyboards.main_menu(db_user.role)
+    # First remove any existing reply keyboard, then show inline menu
+    remove_msg = await update.message.reply_text("⏳ טוען תפריט...", reply_markup=ReplyKeyboardRemove())
+    await remove_msg.delete()
     await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 
@@ -216,6 +220,9 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
     else:
+        # הסרת מקלדת ראשית ישנה (אם קיימת)
+        remove_msg = await update.message.reply_text("⏳", reply_markup=ReplyKeyboardRemove())
+        await remove_msg.delete()
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
 
@@ -397,7 +404,7 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # הפוך למוכר
     if action == "menu_become_seller":
         await query.answer()
-        text = "🏪 *הפוך למוכר*\n\nלהרשמה כמוכר, השתמש בפקודה:\n/register_seller"
+        text = "🏪 *הפוך למוכר*\n\nלהרשמה כמוכר, השתמש בפקודה:\n/register\\_seller"
         keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return

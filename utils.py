@@ -37,7 +37,7 @@ def create_pagination_keyboard(
         keyboard.append(nav_buttons)
     
     # כפתור חזרה
-    keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="back")])
+    keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
     
     return InlineKeyboardMarkup(keyboard)
 
