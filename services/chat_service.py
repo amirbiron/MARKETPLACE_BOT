@@ -14,6 +14,153 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """שירות לניהול שיחות צ'אט"""
 
+    # -------------------- Admin Forum (Topics) mirroring --------------------
+
+    @staticmethod
+    def _admin_forum_enabled() -> bool:
+        return bool(getattr(Config, "ADMIN_FORUM_ENABLED", False)) and int(getattr(Config, "ADMIN_FORUM_CHAT_ID", 0) or 0) != 0
+
+    @staticmethod
+    def _user_display_name_from_doc(user_doc: Optional[dict], fallback: str) -> str:
+        if not user_doc:
+            return fallback
+        return (
+            user_doc.get("commercial_name")
+            or user_doc.get("business_name")
+            or user_doc.get("first_name")
+            or user_doc.get("username")
+            or fallback
+        )
+
+    @staticmethod
+    def _build_admin_forum_topic_title(buyer_doc: Optional[dict], seller_doc: Optional[dict], buyer_id: int, seller_id: int) -> str:
+        buyer_name = ChatService._user_display_name_from_doc(buyer_doc, f"Buyer {buyer_id}")
+        seller_name = ChatService._user_display_name_from_doc(seller_doc, f"Seller {seller_id}")
+        title = f"{buyer_name} ↔ {seller_name}"
+        # Telegram topic names have practical length limits; keep it short & stable.
+        return title[:120]
+
+    @staticmethod
+    async def _ensure_admin_forum_topic(bot: "Bot", chat_doc: dict) -> Optional[int]:
+        """
+        Ensure a dedicated forum topic exists for this chat, and persist its topic id on the chat document.
+        Returns message_thread_id (topic id) or None if unavailable.
+        """
+        if not ChatService._admin_forum_enabled():
+            return None
+
+        admin_forum_chat_id = int(getattr(Config, "ADMIN_FORUM_CHAT_ID", 0) or 0)
+        existing_topic = chat_doc.get("admin_forum_topic_id")
+        existing_forum = chat_doc.get("admin_forum_chat_id")
+        if existing_topic and existing_forum == admin_forum_chat_id:
+            try:
+                return int(existing_topic)
+            except Exception:
+                pass
+
+        # Create a new topic (best-effort)
+        try:
+            # Lazy import to keep module import side-effects minimal
+            from telegram import Bot  # noqa: F401
+        except Exception:
+            return None
+
+        if not hasattr(bot, "create_forum_topic"):
+            logger.warning("Admin forum mirroring enabled but Bot.create_forum_topic is not available in this PTB version")
+            return None
+
+        buyer_id = int(chat_doc.get("buyer_id") or 0)
+        seller_id = int(chat_doc.get("seller_id") or 0)
+        buyer_doc = await db.users.find_one({"user_id": buyer_id})
+        seller_doc = await db.users.find_one({"user_id": seller_id})
+        topic_title = ChatService._build_admin_forum_topic_title(buyer_doc, seller_doc, buyer_id, seller_id)
+
+        try:
+            topic = await bot.create_forum_topic(chat_id=admin_forum_chat_id, name=topic_title)
+            topic_id = int(getattr(topic, "message_thread_id"))
+        except Exception as e:
+            logger.warning(f"Failed to create admin forum topic (chat_id={admin_forum_chat_id}): {e}")
+            return None
+
+        try:
+            await db.chats.update_one(
+                {"_id": chat_doc["_id"]},
+                {
+                    "$set": {
+                        "admin_forum_chat_id": admin_forum_chat_id,
+                        "admin_forum_topic_id": topic_id,
+                        "admin_forum_topic_title": topic_title,
+                        "admin_forum_created_at": datetime.utcnow(),
+                    }
+                },
+            )
+        except Exception as e:
+            logger.warning(f"Failed to persist admin forum topic mapping on chat {chat_doc.get('_id')}: {e}")
+
+        return topic_id
+
+    @staticmethod
+    async def _mirror_message_to_admin_forum(bot: "Bot", chat_doc: dict, sender_id: int, message_text: str) -> None:
+        if not ChatService._admin_forum_enabled():
+            return
+
+        admin_forum_chat_id = int(getattr(Config, "ADMIN_FORUM_CHAT_ID", 0) or 0)
+        topic_id = await ChatService._ensure_admin_forum_topic(bot, chat_doc)
+        if not topic_id:
+            return
+
+        buyer_id = int(chat_doc.get("buyer_id") or 0)
+        seller_id = int(chat_doc.get("seller_id") or 0)
+        sender_role = "קונה" if sender_id == buyer_id else "מוכר" if sender_id == seller_id else "משתמש"
+
+        sender_doc = await db.users.find_one({"user_id": sender_id})
+        buyer_doc = await db.users.find_one({"user_id": buyer_id})
+        seller_doc = await db.users.find_one({"user_id": seller_id})
+        buyer_name = ChatService._user_display_name_from_doc(buyer_doc, f"{buyer_id}")
+        seller_name = ChatService._user_display_name_from_doc(seller_doc, f"{seller_id}")
+        sender_name = ChatService._user_display_name_from_doc(sender_doc, str(sender_id))
+
+        # Use Markdown safely
+        try:
+            from telegram.helpers import escape_markdown
+            md = lambda s: escape_markdown("" if s is None else str(s), version=1)
+        except Exception:
+            md = lambda s: "" if s is None else str(s)
+
+        text = (
+            f"💬 *שיחה:* {md(buyer_name)} ↔ {md(seller_name)}\n"
+            f"👤 *שולח:* {md(sender_name)} ({md(sender_role)})\n"
+            f"🆔 *Chat:* `{md(str(chat_doc.get('_id'))[:24])}`\n\n"
+            f"{md(message_text)}"
+        )
+
+        try:
+            await bot.send_message(
+                chat_id=admin_forum_chat_id,
+                message_thread_id=topic_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+        except TypeError:
+            # Backward compatibility: if message_thread_id is unsupported, fall back to the main forum chat
+            await bot.send_message(chat_id=admin_forum_chat_id, text=text, parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"Failed to mirror chat message to admin forum: {e}")
+
+    @staticmethod
+    async def get_chat_by_admin_forum_topic(admin_forum_chat_id: int, topic_id: int) -> Optional[dict]:
+        """Lookup chat doc by admin forum topic mapping."""
+        try:
+            return await db.chats.find_one(
+                {
+                    "admin_forum_chat_id": int(admin_forum_chat_id),
+                    "admin_forum_topic_id": int(topic_id),
+                }
+            )
+        except Exception as e:
+            logger.error(f"Error finding chat by admin forum topic: {e}")
+            return None
+
     @staticmethod
     async def create_chat(buyer_id: int, seller_id: int, order_id: Optional[str] = None) -> Optional[str]:
         """
@@ -112,23 +259,35 @@ class ChatService:
                 {"$set": update_data}
             )
 
-            # שליחת התראה לנמען
+            # Use a bot instance for notifications / mirroring (best-effort)
+            bot = None
             try:
                 from telegram import Bot
                 bot = Bot(Config.BOT_TOKEN)
-
-                sender = await db.users.find_one({"user_id": sender_id})
-                sender_name = sender.get("first_name", "משתמש") if sender else "משתמש"
-
-                await bot.send_message(
-                    recipient_id,
-                    f"💬 *הודעה חדשה מ-{sender_name}*\n\n"
-                    f"{message_text[:200]}\n\n"
-                    f"השב על ידי שליחת /chats",
-                    parse_mode="Markdown"
-                )
             except Exception as e:
-                logger.warning(f"Failed to send message notification: {e}")
+                logger.warning(f"Failed to initialize Bot for chat notifications: {e}")
+
+            if bot:
+                # שליחת התראה לנמען
+                try:
+                    sender = await db.users.find_one({"user_id": sender_id})
+                    sender_name = sender.get("first_name", "משתמש") if sender else "משתמש"
+
+                    await bot.send_message(
+                        recipient_id,
+                        f"💬 *הודעה חדשה מ-{sender_name}*\n\n"
+                        f"{message_text[:200]}\n\n"
+                        f"השב על ידי שליחת /chats",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send message notification: {e}")
+
+                # Mirror to admin forum (Topics) - best-effort (should never block user flow)
+                try:
+                    await ChatService._mirror_message_to_admin_forum(bot, chat, sender_id, message_text)
+                except Exception as e:
+                    logger.warning(f"Failed to mirror message to admin forum: {e}")
 
             logger.info(f"Message sent in chat {chat_id} by {sender_id}")
             return str(result.inserted_id)

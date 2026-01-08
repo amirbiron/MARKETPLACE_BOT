@@ -151,6 +151,12 @@ class Database:
             await self.chats.create_indexes([
                 IndexModel([("buyer_id", ASCENDING), ("status", ASCENDING), ("last_message_at", DESCENDING)]),
                 IndexModel([("seller_id", ASCENDING), ("status", ASCENDING), ("last_message_at", DESCENDING)]),
+                # Admin forum mirroring (Topics) - optional/sparse
+                IndexModel(
+                    [("admin_forum_chat_id", ASCENDING), ("admin_forum_topic_id", ASCENDING)],
+                    unique=True,
+                    sparse=True,
+                ),
             ])
 
             # Messages indexes (used both for anonymous chat and chat service)
