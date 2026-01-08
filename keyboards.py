@@ -243,7 +243,8 @@ class Keyboards:
             [InlineKeyboardButton("🏪 ניהול מוכרים", callback_data="sys_manage_sellers")],
             [InlineKeyboardButton("🎫 ניהול קופונים", callback_data="sys_manage_coupons")],
             [InlineKeyboardButton("📢 שליחת הודעה לכולם", callback_data="sys_broadcast")],
-            [InlineKeyboardButton("🔒 חסימת משתמש", callback_data="sys_block_user")],
+            # חסימה דורשת בחירת משתמש (ID). ננתב לניהול משתמשים במקום callback לא תקין.
+            [InlineKeyboardButton("🔒 חסימת משתמש", callback_data="sys_manage_users")],
             [InlineKeyboardButton("📋 לוגים אחרונים", callback_data="sys_view_logs")],
             [InlineKeyboardButton("⚙️ הגדרות מערכת", callback_data="sys_settings")],
             [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]

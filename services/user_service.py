@@ -164,16 +164,31 @@ class UserService:
     async def approve_seller(user_id: int) -> bool:
         """אישור מוכר על ידי אדמין"""
         users = await database.get_users_collection()
-        
-        result = await users.update_one(
-            {"user_id": user_id},
-            {"$set": {"seller_status": "approved"}}
-        )
-        
+
+        user_data = await users.find_one({"user_id": user_id})
+        if not user_data:
+            return False
+
+        # קבע role אם המשתמש עדיין "buyer" (תאימות לאחור לנתונים ישנים)
+        current_role = user_data.get("role", UserRole.BUYER.value)
+        is_admin = current_role == UserRole.ADMIN.value
+        is_verified = bool(user_data.get("is_verified")) or bool(user_data.get("id_number"))
+
+        update_set = {"seller_status": "approved"}
+        if not is_admin and current_role not in [UserRole.SELLER_VERIFIED.value, UserRole.SELLER_UNVERIFIED.value]:
+            update_set["role"] = UserRole.SELLER_VERIFIED.value if is_verified else UserRole.SELLER_UNVERIFIED.value
+
+        result = await users.update_one({"user_id": user_id}, {"$set": update_set})
+
+        if result.matched_count == 0:
+            return False
+
+        # גם אם לא שונה דבר (כבר אושר), נחשב הצלחה כדי לא "להפיל" את ה-flow.
         if result.modified_count > 0:
             logger.info(f"Approved seller {user_id}")
-            return True
-        return False
+        else:
+            logger.info(f"Seller {user_id} already approved (no changes)")
+        return True
     
     @staticmethod
     async def reject_seller(user_id: int) -> bool:
