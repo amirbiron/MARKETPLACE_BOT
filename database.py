@@ -24,12 +24,17 @@ class Database:
         self.orders: Optional[AsyncIOMotorCollection] = None
         self.auctions: Optional[AsyncIOMotorCollection] = None
         self.messages: Optional[AsyncIOMotorCollection] = None
+        self.chats: Optional[AsyncIOMotorCollection] = None
         self.notifications: Optional[AsyncIOMotorCollection] = None
         self.payouts: Optional[AsyncIOMotorCollection] = None
         self.reviews: Optional[AsyncIOMotorCollection] = None
+        self.review_reports: Optional[AsyncIOMotorCollection] = None
         self.favorites: Optional[AsyncIOMotorCollection] = None
         self.disputes: Optional[AsyncIOMotorCollection] = None
+        self.dispute_messages: Optional[AsyncIOMotorCollection] = None
         self.transactions: Optional[AsyncIOMotorCollection] = None
+        self.payment_requests: Optional[AsyncIOMotorCollection] = None
+        self.support_tickets: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -43,12 +48,17 @@ class Database:
             self.orders = self.db["orders"]
             self.auctions = self.db["auctions"]
             self.messages = self.db["messages"]
+            self.chats = self.db["chats"]
             self.notifications = self.db["notifications"]
             self.payouts = self.db["payouts"]
             self.reviews = self.db["reviews"]
+            self.review_reports = self.db["review_reports"]
             self.favorites = self.db["favorites"]
             self.disputes = self.db["disputes"]
+            self.dispute_messages = self.db["dispute_messages"]
             self.transactions = self.db["transactions"]
+            self.payment_requests = self.db["payment_requests"]
+            self.support_tickets = self.db["support_tickets"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -114,17 +124,52 @@ class Database:
                 IndexModel([("user_id", ASCENDING), ("read", ASCENDING), ("created_at", DESCENDING)]),
                 IndexModel([("read", ASCENDING), ("created_at", DESCENDING)])
             ])
+
+            # Chats indexes
+            await self.chats.create_indexes([
+                IndexModel([("buyer_id", ASCENDING), ("status", ASCENDING), ("last_message_at", DESCENDING)]),
+                IndexModel([("seller_id", ASCENDING), ("status", ASCENDING), ("last_message_at", DESCENDING)]),
+            ])
+
+            # Messages indexes (used both for anonymous chat and chat service)
+            await self.messages.create_indexes([
+                IndexModel([("chat_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("recipient_id", ASCENDING), ("read", ASCENDING), ("created_at", DESCENDING)]),
+            ])
+
+            # Support tickets indexes
+            await self.support_tickets.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+            ])
             
             # Reviews indexes
             await self.reviews.create_indexes([
                 IndexModel([("seller_id", ASCENDING)]),
                 IndexModel([("buyer_id", ASCENDING), ("seller_id", ASCENDING)], unique=True)
             ])
+
+            # Review reports indexes
+            await self.review_reports.create_indexes([
+                IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+                IndexModel([("review_id", ASCENDING)]),
+            ])
             
             # Transactions indexes
             await self.transactions.create_indexes([
                 IndexModel([("user_id", ASCENDING)]),
                 IndexModel([("created_at", DESCENDING)])
+            ])
+
+            # Payment requests indexes
+            await self.payment_requests.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("expires_at", ASCENDING)]),
+            ])
+
+            # Dispute messages indexes
+            await self.dispute_messages.create_indexes([
+                IndexModel([("dispute_id", ASCENDING), ("created_at", ASCENDING)]),
             ])
             
             logger.info("Database indexes created successfully")

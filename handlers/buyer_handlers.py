@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 # States for conversation
 SEARCH_TEXT = 1
+RATING_COMMENT = 2
+SELECT_RATING = 3
 
 
 class BuyerHandlers:
@@ -355,6 +357,7 @@ class BuyerHandlers:
         keyboard = Keyboards.rating_keyboard(order_id)
         
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        return SELECT_RATING
     
     @staticmethod
     async def submit_rating_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -379,7 +382,48 @@ class BuyerHandlers:
         await query.edit_message_text(text, parse_mode="Markdown")
         await query.message.reply_text("⏳ ממתין להערה או /skip לדילוג...")
 
-        return SEARCH_TEXT  # Conversation state
+        return RATING_COMMENT  # Conversation state
+
+    @staticmethod
+    async def process_rating_comment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """קליטת הערה לדירוג (עד 15 תווים)"""
+        from services.review_service import ReviewService
+        from services.order_service import OrderService
+        from bson import ObjectId
+
+        user_id = update.effective_user.id
+        order_id = context.user_data.get("rating_order_id")
+        rating = context.user_data.get("rating_score")
+
+        if not order_id or not rating:
+            await update.message.reply_text("❌ משהו השתבש בתהליך הדירוג. נסה שוב מההזמנות שלי.")
+            return ConversationHandler.END
+
+        comment = update.message.text
+        if comment == "/skip":
+            comment = None
+
+        order = await OrderService.get_order(ObjectId(order_id))
+        if not order:
+            await update.message.reply_text("❌ ההזמנה לא נמצאה.")
+            return ConversationHandler.END
+
+        error = await ReviewService.create_review(
+            buyer_id=user_id,
+            seller_id=order.seller_id,
+            order_id=order_id,
+            rating=int(rating),
+            comment=comment,
+        )
+
+        if error:
+            await update.message.reply_text(error)
+        else:
+            await update.message.reply_text("✅ תודה! הדירוג נשמר בהצלחה.")
+
+        context.user_data.pop("rating_score", None)
+        context.user_data.pop("rating_order_id", None)
+        return ConversationHandler.END
 
     @staticmethod
     async def show_hot_coupons(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -107,7 +107,7 @@ class AuctionService:
                 return f"❌ ההצעה חייבת להיות לפחות {min_bid:.2f}₪"
 
             # בדיקת יתרה
-            user = await db.users.find_one({"telegram_id": bidder_id})
+            user = await db.users.find_one({"user_id": bidder_id})
             if not user:
                 return "❌ משתמש לא נמצא"
 
@@ -122,7 +122,7 @@ class AuctionService:
                 prev_frozen = auction["current_price"] * (1 + Config.BUYER_COMMISSION_RATE)
 
                 await db.users.update_one(
-                    {"telegram_id": prev_bidder},
+                    {"user_id": prev_bidder},
                     {
                         "$inc": {
                             "frozen_balance": -prev_frozen,
@@ -146,7 +146,7 @@ class AuctionService:
 
             # הקפאת יתרה למציע החדש
             await db.users.update_one(
-                {"telegram_id": bidder_id},
+                {"user_id": bidder_id},
                 {
                     "$inc": {
                         "balance": -total_needed,
@@ -238,14 +238,14 @@ class AuctionService:
 
                 # ניכוי מיתרה קפואה של הקונה
                 await db.users.update_one(
-                    {"telegram_id": winner_id},
+                    {"user_id": winner_id},
                     {"$inc": {"frozen_balance": -frozen_amount}}
                 )
 
                 # הוספת כסף למוכר (בניכוי עמלה)
                 seller_receives = winning_price - seller_commission
                 await db.users.update_one(
-                    {"telegram_id": auction["seller_id"]},
+                    {"user_id": auction["seller_id"]},
                     {"$inc": {"balance": seller_receives}}
                 )
 
@@ -393,7 +393,7 @@ class AuctionService:
                     auction["coupon"] = coupon
 
                 # הוספת מידע על המוכר
-                seller = await db.users.find_one({"telegram_id": auction["seller_id"]})
+                seller = await db.users.find_one({"user_id": auction["seller_id"]})
                 if seller:
                     auction["seller"] = {
                         "business_name": seller.get("business_name", "לא ידוע"),

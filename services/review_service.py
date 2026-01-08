@@ -161,7 +161,7 @@ class ReviewService:
 
                 # עדכון במשתמש
                 await db.users.update_one(
-                    {"telegram_id": seller_id},
+                    {"user_id": seller_id},
                     {
                         "$set": {
                             "rating_average": avg_rating,
@@ -189,7 +189,7 @@ class ReviewService:
 
             # הוספת שם המשתמש לכל ביקורת (אופציונלי)
             for review in reviews:
-                buyer = await db.users.find_one({"telegram_id": review["buyer_id"]})
+                buyer = await db.users.find_one({"user_id": review["buyer_id"]})
                 if buyer:
                     review["buyer_name"] = buyer.get("first_name", "קונה")
                 else:
@@ -206,7 +206,7 @@ class ReviewService:
         """קבלת סטטיסטיקות דירוג של מוכר"""
         try:
             # דירוג ממוצע וכמות ביקורות
-            user = await db.users.find_one({"telegram_id": seller_id})
+            user = await db.users.find_one({"user_id": seller_id})
 
             if not user:
                 return {
@@ -304,7 +304,7 @@ class ReviewService:
 
             # הוספת מידע על המוכרים
             for review in reviews:
-                seller = await db.users.find_one({"telegram_id": review["seller_id"]})
+                seller = await db.users.find_one({"user_id": review["seller_id"]})
                 if seller:
                     review["seller_name"] = seller.get("business_name", "מוכר")
                 else:
