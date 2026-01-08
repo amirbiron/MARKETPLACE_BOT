@@ -39,6 +39,9 @@ class Keyboards:
                 InlineKeyboardButton("💸 משיכת כספים", callback_data="menu_withdraw"),
                 InlineKeyboardButton("📈 סטטיסטיקות", callback_data="menu_stats")
             ])
+            keyboard.append([
+                InlineKeyboardButton("🎯 דשבורד מתקדם", callback_data="seller_dashboard")
+            ])
         else:
             # הצג כפתור "הפוך למוכר" רק למשתמשים שאינם מוכרים
             keyboard.append([
@@ -775,3 +778,268 @@ class Keyboards:
             [InlineKeyboardButton("🔙 חזרה", callback_data="admin_payouts_pending")]
         ]
         return InlineKeyboardMarkup(keyboard)
+
+    # ==================== Seller Dashboard Keyboards ====================
+
+    @staticmethod
+    def seller_dashboard_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת תפריט דשבורד מוכר ראשי"""
+        keyboard = [
+            [InlineKeyboardButton("📊 סטטיסטיקות מתקדמות", callback_data="dashboard_stats")],
+            [InlineKeyboardButton("📈 גרף מכירות", callback_data="dashboard_graph")],
+            [InlineKeyboardButton("🏆 מוצרים מובילים", callback_data="dashboard_top_products")],
+            [InlineKeyboardButton("📁 פילוח לפי קטגוריה", callback_data="dashboard_categories")],
+            [InlineKeyboardButton("⏰ זמני שיא", callback_data="dashboard_peak_times")],
+            [InlineKeyboardButton("📋 דוחות", callback_data="dashboard_reports")],
+            [InlineKeyboardButton("📦 ניהול מוצרים", callback_data="dashboard_products")],
+            [InlineKeyboardButton("🔔 הגדרות התראות", callback_data="dashboard_alerts")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def dashboard_period_keyboard(callback_prefix: str = "dashboard") -> InlineKeyboardMarkup:
+        """מקלדת בחירת תקופה לסטטיסטיקות"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📅 יום", callback_data=f"{callback_prefix}_period_day"),
+                InlineKeyboardButton("📆 שבוע", callback_data=f"{callback_prefix}_period_week"),
+            ],
+            [
+                InlineKeyboardButton("🗓️ חודש", callback_data=f"{callback_prefix}_period_month"),
+                InlineKeyboardButton("📊 שנה", callback_data=f"{callback_prefix}_period_year"),
+            ],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="seller_dashboard")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def dashboard_reports_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת דוחות"""
+        keyboard = [
+            [InlineKeyboardButton("📊 דוח מכירות חודשי", callback_data="report_monthly")],
+            [InlineKeyboardButton("💰 דוח עמלות", callback_data="report_commissions")],
+            [InlineKeyboardButton("⚖️ דוח מחלוקות", callback_data="report_disputes")],
+            [InlineKeyboardButton("📁 ייצוא מכירות (CSV)", callback_data="export_sales_csv")],
+            [InlineKeyboardButton("📁 ייצוא מוצרים (CSV)", callback_data="export_products_csv")],
+            [InlineKeyboardButton("📁 ייצוא כל הנתונים", callback_data="export_all_csv")],
+            [InlineKeyboardButton("🔙 חזרה לדשבורד", callback_data="seller_dashboard")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def dashboard_products_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת ניהול מוצרים מתקדם"""
+        keyboard = [
+            [InlineKeyboardButton("📋 כל המוצרים שלי", callback_data="products_list")],
+            [InlineKeyboardButton("✏️ עריכה מרובה", callback_data="products_bulk_edit")],
+            [InlineKeyboardButton("📋 שכפול קופון", callback_data="products_duplicate")],
+            [InlineKeyboardButton("⏰ תזמון פרסום", callback_data="products_schedule")],
+            [InlineKeyboardButton("💰 עדכון מחיר מרובה", callback_data="products_bulk_price")],
+            [InlineKeyboardButton("📊 קופונים מתוזמנים", callback_data="products_scheduled_list")],
+            [InlineKeyboardButton("🔙 חזרה לדשבורד", callback_data="seller_dashboard")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def dashboard_alerts_keyboard(settings: dict) -> InlineKeyboardMarkup:
+        """מקלדת הגדרות התראות"""
+        # Icons based on status
+        sales_icon = "✅" if settings.get("sales_threshold_enabled") else "❌"
+        review_icon = "✅" if settings.get("negative_review_alert") else "❌"
+        daily_icon = "✅" if settings.get("daily_summary") else "❌"
+        weekly_icon = "✅" if settings.get("weekly_summary") else "❌"
+        dispute_icon = "✅" if settings.get("dispute_alert") else "❌"
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                f"{sales_icon} התראת סף מכירות ({settings.get('sales_threshold_amount', 10)})",
+                callback_data="alert_toggle_sales"
+            )],
+            [InlineKeyboardButton(
+                f"{review_icon} התראה על ביקורת שלילית",
+                callback_data="alert_toggle_review"
+            )],
+            [InlineKeyboardButton(
+                f"{daily_icon} סיכום יומי",
+                callback_data="alert_toggle_daily"
+            )],
+            [InlineKeyboardButton(
+                f"{weekly_icon} סיכום שבועי",
+                callback_data="alert_toggle_weekly"
+            )],
+            [InlineKeyboardButton(
+                f"{dispute_icon} התראה על מחלוקת",
+                callback_data="alert_toggle_dispute"
+            )],
+            [InlineKeyboardButton("⚙️ שנה סף מכירות", callback_data="alert_change_threshold")],
+            [InlineKeyboardButton("🔙 חזרה לדשבורד", callback_data="seller_dashboard")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def products_list_keyboard(
+        products: List[Tuple[str, str]],  # (coupon_id, title)
+        current_page: int,
+        total_pages: int,
+        selected_ids: List[str] = None
+    ) -> InlineKeyboardMarkup:
+        """מקלדת רשימת מוצרים עם אפשרות בחירה"""
+        keyboard = []
+        selected_ids = selected_ids or []
+        
+        for coupon_id, title in products:
+            icon = "✅" if coupon_id in selected_ids else "📦"
+            display_title = title[:25] + "..." if len(title) > 25 else title
+            keyboard.append([InlineKeyboardButton(
+                f"{icon} {display_title}",
+                callback_data=f"product_select_{coupon_id}"
+            )])
+        
+        # Navigation
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"products_page_{current_page-1}"))
+            nav_row.append(InlineKeyboardButton(f"{current_page+1}/{total_pages}", callback_data="ignore"))
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("➡️", callback_data=f"products_page_{current_page+1}"))
+            keyboard.append(nav_row)
+        
+        # Action buttons if items selected
+        if selected_ids:
+            keyboard.append([
+                InlineKeyboardButton(f"✏️ ערוך ({len(selected_ids)})", callback_data="products_edit_selected"),
+                InlineKeyboardButton("🗑️ נקה בחירה", callback_data="products_clear_selection")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="dashboard_products")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def product_actions_keyboard(coupon_id: str) -> InlineKeyboardMarkup:
+        """מקלדת פעולות על מוצר בודד"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✏️ עריכת מחיר", callback_data=f"product_edit_price_{coupon_id}"),
+                InlineKeyboardButton("📝 עריכת תיאור", callback_data=f"product_edit_desc_{coupon_id}")
+            ],
+            [
+                InlineKeyboardButton("📋 שכפול", callback_data=f"product_duplicate_{coupon_id}"),
+                InlineKeyboardButton("⏰ תזמון", callback_data=f"product_schedule_{coupon_id}")
+            ],
+            [
+                InlineKeyboardButton("🗑️ מחיקה", callback_data=f"product_delete_{coupon_id}")
+            ],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="products_list")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def scheduled_coupons_keyboard(
+        items: List[Tuple[str, str, str]],  # (schedule_id, title, scheduled_time)
+        current_page: int,
+        total_pages: int
+    ) -> InlineKeyboardMarkup:
+        """מקלדת קופונים מתוזמנים"""
+        keyboard = []
+        
+        for schedule_id, title, scheduled_time in items:
+            display_title = title[:20] + "..." if len(title) > 20 else title
+            keyboard.append([InlineKeyboardButton(
+                f"⏰ {display_title} - {scheduled_time}",
+                callback_data=f"scheduled_view_{schedule_id}"
+            )])
+        
+        # Navigation
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️", callback_data=f"scheduled_page_{current_page-1}"))
+            nav_row.append(InlineKeyboardButton(f"{current_page+1}/{total_pages}", callback_data="ignore"))
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("➡️", callback_data=f"scheduled_page_{current_page+1}"))
+            keyboard.append(nav_row)
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="dashboard_products")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def scheduled_coupon_actions_keyboard(schedule_id: str) -> InlineKeyboardMarkup:
+        """מקלדת פעולות על קופון מתוזמן"""
+        keyboard = [
+            [InlineKeyboardButton("✏️ שנה זמן", callback_data=f"scheduled_edit_{schedule_id}")],
+            [InlineKeyboardButton("🚀 פרסם עכשיו", callback_data=f"scheduled_publish_{schedule_id}")],
+            [InlineKeyboardButton("❌ בטל תזמון", callback_data=f"scheduled_cancel_{schedule_id}")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="products_scheduled_list")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def bulk_price_update_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת עדכון מחיר מרובה"""
+        keyboard = [
+            [InlineKeyboardButton("📉 הנחה 5%", callback_data="bulk_price_discount_5")],
+            [InlineKeyboardButton("📉 הנחה 10%", callback_data="bulk_price_discount_10")],
+            [InlineKeyboardButton("📉 הנחה 15%", callback_data="bulk_price_discount_15")],
+            [InlineKeyboardButton("📈 העלאה 5%", callback_data="bulk_price_increase_5")],
+            [InlineKeyboardButton("📈 העלאה 10%", callback_data="bulk_price_increase_10")],
+            [InlineKeyboardButton("💰 סכום קבוע", callback_data="bulk_price_fixed")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="dashboard_products")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def graph_display(data: List[dict], title: str = "מכירות") -> str:
+        """יצירת גרף פשוט בטקסט"""
+        if not data:
+            return "אין נתונים להצגה"
+        
+        max_value = max(d.get("sales", 0) for d in data) or 1
+        graph = f"📊 *{title}*\n\n"
+        
+        for item in data[-10:]:  # Last 10 data points
+            date = item.get("date", "")
+            value = item.get("sales", 0)
+            bar_length = int((value / max_value) * 10)
+            bar = "█" * bar_length + "░" * (10 - bar_length)
+            graph += f"`{date}` [{bar}] {value}\n"
+        
+        return graph
+
+    @staticmethod
+    def stats_comparison_display(comparison: dict) -> str:
+        """תצוגת השוואת תקופות"""
+        current = comparison.get("current", {})
+        change = comparison.get("change", {})
+        
+        sales_arrow = "📈" if change.get("sales", 0) >= 0 else "📉"
+        revenue_arrow = "📈" if change.get("revenue", 0) >= 0 else "📉"
+        
+        return f"""
+{sales_arrow} מכירות: {current.get('sales', 0)} ({change.get('sales', 0):+.1f}%)
+{revenue_arrow} הכנסות: {current.get('revenue', 0):.2f}₪ ({change.get('revenue', 0):+.1f}%)
+"""
+
+    @staticmethod
+    def peak_times_display(peak_data: dict) -> str:
+        """תצוגת זמני שיא"""
+        display = "⏰ *זמני שיא למכירות*\n\n"
+        
+        if peak_data.get("peak_hour_display"):
+            display += f"🕐 שעה הכי טובה: {peak_data['peak_hour_display']}\n"
+        
+        if peak_data.get("peak_day"):
+            display += f"📅 יום הכי טוב: יום {peak_data['peak_day']}\n"
+        
+        display += "\n📊 *מכירות לפי שעה:*\n"
+        for item in peak_data.get("by_hour", [])[:5]:
+            display += f"  {item['hour']:02d}:00 - {item['sales']} מכירות\n"
+        
+        display += "\n📊 *מכירות לפי יום:*\n"
+        for item in peak_data.get("by_day", [])[:5]:
+            display += f"  יום {item['day']} - {item['sales']} מכירות\n"
+        
+        return display

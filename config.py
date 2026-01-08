@@ -158,6 +158,33 @@ class Config:
     FRAUD_NEW_SELLER_DAYS: int = 30  # ימים שמוכר נחשב "חדש"
     FRAUD_NEW_SELLER_DAILY_LIMIT: int = 5  # הגבלת קופונים יומית למוכר חדש
     
+    # === Seller Dashboard Settings ===
+    
+    # Analytics
+    DASHBOARD_DEFAULT_PERIOD: str = "month"  # תקופת ברירת מחדל לסטטיסטיקות
+    DASHBOARD_MAX_TOP_PRODUCTS: int = 10  # מספר מוצרים מובילים להצגה
+    DASHBOARD_GRAPH_POINTS: int = 30  # נקודות נתונים לגרף
+    
+    # Reports
+    REPORTS_ENABLED: bool = True  # הפעלת דוחות
+    REPORT_MAX_ROWS: int = 1000  # מקסימום שורות בדוח
+    
+    # Alerts
+    SELLER_ALERTS_ENABLED: bool = True  # הפעלת התראות למוכרים
+    DEFAULT_SALES_THRESHOLD: int = 10  # סף מכירות ברירת מחדל להתראה
+    
+    # Bulk Operations
+    BULK_EDIT_MAX_ITEMS: int = 50  # מקסימום פריטים לעריכה מרובה
+    BULK_PRICE_UPDATE_ENABLED: bool = True  # הפעלת עדכון מחיר מרובה
+    
+    # Scheduled Coupons
+    SCHEDULED_COUPONS_ENABLED: bool = True  # הפעלת תזמון קופונים
+    MAX_SCHEDULED_COUPONS: int = 20  # מקסימום קופונים מתוזמנים למוכר
+    MIN_SCHEDULE_AHEAD_MINUTES: int = 30  # מינימום זמן לתזמון
+    
+    # Coupon Duplication
+    COUPON_DUPLICATE_ENABLED: bool = True  # הפעלת שכפול קופונים
+    
     @classmethod
     def validate(cls) -> bool:
         """בדיקת תקינות ההגדרות"""

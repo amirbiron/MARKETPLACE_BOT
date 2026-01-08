@@ -43,6 +43,9 @@ class Database:
         self.saved_cards: Optional[AsyncIOMotorCollection] = None
         self.payout_transactions: Optional[AsyncIOMotorCollection] = None
         self.daily_card_limits: Optional[AsyncIOMotorCollection] = None
+        self.seller_analytics: Optional[AsyncIOMotorCollection] = None
+        self.seller_alert_settings: Optional[AsyncIOMotorCollection] = None
+        self.scheduled_coupons: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -75,6 +78,9 @@ class Database:
             self.saved_cards = self.db["saved_cards"]
             self.payout_transactions = self.db["payout_transactions"]
             self.daily_card_limits = self.db["daily_card_limits"]
+            self.seller_analytics = self.db["seller_analytics"]
+            self.seller_alert_settings = self.db["seller_alert_settings"]
+            self.scheduled_coupons = self.db["scheduled_coupons"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -246,6 +252,23 @@ class Database:
             # Daily card limits indexes
             await self.daily_card_limits.create_indexes([
                 IndexModel([("user_id", ASCENDING), ("date", ASCENDING)], unique=True),
+            ])
+
+            # Seller analytics indexes
+            await self.seller_analytics.create_indexes([
+                IndexModel([("seller_id", ASCENDING), ("date", DESCENDING)]),
+                IndexModel([("seller_id", ASCENDING), ("date", ASCENDING)], unique=True),
+            ])
+
+            # Seller alert settings indexes
+            await self.seller_alert_settings.create_indexes([
+                IndexModel([("seller_id", ASCENDING)], unique=True),
+            ])
+
+            # Scheduled coupons indexes
+            await self.scheduled_coupons.create_indexes([
+                IndexModel([("seller_id", ASCENDING), ("status", ASCENDING)]),
+                IndexModel([("status", ASCENDING), ("scheduled_at", ASCENDING)]),
             ])
             
             logger.info("Database indexes created successfully")
@@ -819,3 +842,18 @@ async def get_payout_transactions_collection() -> AsyncIOMotorCollection:
 async def get_daily_card_limits_collection() -> AsyncIOMotorCollection:
     await _ensure_connected()
     return db.daily_card_limits
+
+
+async def get_seller_analytics_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.seller_analytics
+
+
+async def get_seller_alert_settings_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.seller_alert_settings
+
+
+async def get_scheduled_coupons_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.scheduled_coupons

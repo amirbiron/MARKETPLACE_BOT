@@ -898,6 +898,52 @@ def main():
     # Menu callbacks (main menu inline buttons)
     application.add_handler(CallbackQueryHandler(menu_callback_handler, pattern="^menu_"))
     
+    # ==================== Seller Dashboard Callbacks ====================
+    
+    # Main dashboard
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_dashboard, pattern="^seller_dashboard$"))
+    
+    # Statistics
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_advanced_stats, pattern="^dashboard_stats$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.change_stats_period, pattern="^stats_period_"))
+    
+    # Graph
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_sales_graph, pattern="^dashboard_graph$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.change_graph_period, pattern="^graph_period_"))
+    
+    # Analytics views
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_top_products, pattern="^dashboard_top_products$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_category_breakdown, pattern="^dashboard_categories$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_peak_times, pattern="^dashboard_peak_times$"))
+    
+    # Reports
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_reports_menu, pattern="^dashboard_reports$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.generate_monthly_report, pattern="^report_monthly$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.generate_commission_report, pattern="^report_commissions$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.generate_disputes_report, pattern="^report_disputes$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.export_sales_csv, pattern="^export_sales_csv$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.export_products_csv, pattern="^export_products_csv$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.export_all_csv, pattern="^export_all_csv$"))
+    
+    # Product Management
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_products_menu, pattern="^dashboard_products$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_products_list, pattern="^products_list$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.select_product, pattern="^product_select_"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.clear_product_selection, pattern="^products_clear_selection$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.products_pagination, pattern="^products_page_"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_duplicate_menu, pattern="^products_duplicate$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.duplicate_product, pattern="^product_duplicate_"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_bulk_price_menu, pattern="^products_bulk_price$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.apply_bulk_price_change, pattern="^bulk_price_"))
+    
+    # Alert Settings
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_alert_settings, pattern="^dashboard_alerts$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.toggle_alert, pattern="^alert_toggle_"))
+    
+    # Scheduled Coupons
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_scheduled_list, pattern="^products_scheduled_list$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.cancel_scheduled_coupon, pattern="^scheduled_cancel_"))
+    
     # Settings callbacks
     application.add_handler(CallbackQueryHandler(settings_callback_handler, pattern="^settings_"))
 
