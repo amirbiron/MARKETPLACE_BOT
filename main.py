@@ -285,7 +285,6 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         user_id = update.effective_user.id
         from services.payment_service import PaymentService
         from services.payout_service import PayoutService
-        from config import Config
         
         balance, frozen = await PaymentService.get_user_balance(user_id)
         
