@@ -174,6 +174,101 @@ def health():
     })
 
 
+@app.route('/api/demo/seed')
+def seed_demo_data():
+    """Add demo coupons for testing (only in debug mode or with secret key)"""
+    secret = request.args.get('key', '')
+    expected_secret = os.getenv('DEMO_SEED_KEY', 'demo123')
+    
+    if secret != expected_secret:
+        return jsonify({'error': 'Invalid key'}), 403
+    
+    async def _seed():
+        db = get_db()
+        
+        # Check if demo data already exists
+        existing = await db.coupons.find_one({'title': 'ארוחת בוקר זוגית מפנקת [DEMO]'})
+        if existing:
+            return {'message': 'Demo data already exists', 'seeded': False}
+        
+        demo_coupons = [
+            {
+                'seller_id': 0,
+                'title': 'ארוחת בוקר זוגית מפנקת [DEMO]',
+                'description': 'ארוחת בוקר עשירה לזוג כולל שתייה חמה',
+                'category': '🍔 מסעדות ואוכל',
+                'original_price': 150,
+                'sale_price': 89,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+            {
+                'seller_id': 0,
+                'title': 'טיפול פנים מלא + עיסוי [DEMO]',
+                'description': 'טיפול פנים מפנק כולל עיסוי צוואר',
+                'category': '💆 יופי וספא',
+                'original_price': 350,
+                'sale_price': 199,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+            {
+                'seller_id': 0,
+                'title': 'כרטיס לסרט + פופקורן [DEMO]',
+                'description': 'כרטיס לכל סרט + פופקורן גדול',
+                'category': '🎬 בידור ופנאי',
+                'original_price': 75,
+                'sale_price': 45,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+            {
+                'seller_id': 0,
+                'title': 'אוזניות בלוטות׳ איכותיות [DEMO]',
+                'description': 'אוזניות TWS עם ביטול רעשים',
+                'category': '📱 מוצרי אלקטרוניקה',
+                'original_price': 299,
+                'sale_price': 149,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+            {
+                'seller_id': 0,
+                'title': 'קורס יוגה - 10 שיעורים [DEMO]',
+                'description': 'כרטיסייה ל-10 שיעורי יוגה',
+                'category': '🏋️ ספורט וכושר',
+                'original_price': 500,
+                'sale_price': 299,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+            {
+                'seller_id': 0,
+                'title': 'ארוחה איטלקית לזוג [DEMO]',
+                'description': 'פסטה + קינוח + יין לזוג',
+                'category': '🍔 מסעדות ואוכל',
+                'original_price': 220,
+                'sale_price': 129,
+                'status': 'active',
+                'created_at': datetime.utcnow()
+            },
+        ]
+        
+        result = await db.coupons.insert_many(demo_coupons)
+        return {
+            'message': 'Demo data seeded successfully',
+            'seeded': True,
+            'count': len(result.inserted_ids)
+        }
+    
+    try:
+        result = run_async(_seed())
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error seeding demo data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/categories')
 def get_categories():
     """Get all coupon categories"""
