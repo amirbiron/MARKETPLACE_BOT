@@ -48,12 +48,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # יצירת/קבלת משתמש
     db_user = await UserService.get_user(user.id)
     if not db_user:
+        desired_role = UserRole.ADMIN if user.id in Config.ADMIN_IDS else UserRole.BUYER
         db_user = await UserService.create_user(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
-            role=UserRole.BUYER
+            role=desired_role
         )
+    else:
+        # קידום אוטומטי לאדמין לפי ADMIN_IDS (כדי שתפריט אדמין יוצג)
+        if user.id in Config.ADMIN_IDS and db_user.role != UserRole.ADMIN:
+            await UserService.set_admin(user.id)
+            db_user = await UserService.get_user(user.id) or db_user
     
     welcome_text = f"""
 🎉 *ברוך הבא ל-Marketplace Bot!*
@@ -197,12 +203,18 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db_user = await UserService.get_user(user.id)
     if not db_user:
+        desired_role = UserRole.ADMIN if user.id in Config.ADMIN_IDS else UserRole.BUYER
         db_user = await UserService.create_user(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
-            role=UserRole.BUYER,
+            role=desired_role,
         )
+    else:
+        # קידום אוטומטי לאדמין לפי ADMIN_IDS (כדי שתפריט אדמין יוצג גם מ-/menu)
+        if user.id in Config.ADMIN_IDS and db_user.role != UserRole.ADMIN:
+            await UserService.set_admin(user.id)
+            db_user = await UserService.get_user(user.id) or db_user
 
     keyboard = Keyboards.main_menu(db_user.role)
     text = "🏠 *תפריט ראשי*\n\nבחר פעולה מהכפתורים:"

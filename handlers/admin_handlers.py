@@ -31,7 +31,11 @@ class AdminHandlers:
         """תפריט אדמין ראשי"""
         user_id = update.effective_user.id
         query = update.callback_query
-        
+
+        # קידום אוטומטי לפי Config.ADMIN_IDS (כדי שלא ייתקעו בלי תפריט אדמין)
+        if user_id in Config.ADMIN_IDS and not await UserService.is_admin(user_id):
+            await UserService.set_admin(user_id)
+
         if not await UserService.is_admin(user_id):
             error_text = "❌ אין לך הרשאות אדמין."
             if query:
