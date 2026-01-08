@@ -448,10 +448,43 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # הפוך למוכר - התחל ישירות את תהליך הרישום
     if action == "menu_become_seller":
         await query.answer()
-        # בדיקה אם כבר מוכר
-        if await UserService.is_seller(update.effective_user.id):
+        # בדיקה סטטוס מוכר קיים / ממתין / חסום
+        user_id = update.effective_user.id
+        user = await UserService.get_user(user_id)
+
+        if user and getattr(user, "seller_status", None) == "pending":
+            await query.edit_message_text(
+                "⏳ *ממתין לאישור*\n\n"
+                "הבקשה שלך להירשם כמוכר כבר נשלחה וממתינה לאישור אדמינים.\n"
+                "תקבל הודעה כשהבקשה תאושר.",
+                parse_mode="Markdown",
+            )
+            return
+
+        if user and getattr(user, "seller_status", None) == "blocked":
+            await query.edit_message_text(
+                "🚫 *בקשת מוכר חסומה*\n\n"
+                "לא ניתן להתחיל רישום כמוכר כרגע.\n"
+                "אם אתה חושב שזו טעות, פנה לתמיכה: /support",
+                parse_mode="Markdown",
+            )
+            return
+
+        if await UserService.is_seller(user_id):
             await query.edit_message_text("✅ אתה כבר רשום כמוכר!")
             return
+
+        # ניקוי מצבי המתנה קודמים כדי למנוע ניתוב שגוי
+        for key in (
+            "awaiting_seller_registration",
+            "awaiting_commercial_name",
+            "awaiting_phone",
+            "awaiting_id_number",
+            "business_name",
+            "commercial_name",
+            "phone",
+        ):
+            context.user_data.pop(key, None)
         
         # התחלת תהליך הרישום ישירות
         text = """
@@ -1129,6 +1162,7 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_seller_requests, pattern="^admin_seller_requests$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_seller_request_details, pattern="^seller_req_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.approve_seller, pattern="^approve_seller_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.block_seller, pattern="^block_seller_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.reject_seller, pattern="^reject_seller_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_payout_requests, pattern="^admin_payout_requests$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_disputes, pattern="^admin_disputes$"))
@@ -1288,6 +1322,8 @@ def main():
 
     # ReplyKeyboard router (menu buttons) - register late so more specific
     # ConversationHandlers (support/upload) can match first.
+    # Allow /skip during inline "awaiting_id_number" flow (router ignores commands by default).
+    application.add_handler(MessageHandler(filters.Regex(r"^/skip$"), menu_text_router))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_text_router))
 
     # Error handler

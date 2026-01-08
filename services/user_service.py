@@ -178,6 +178,12 @@ class UserService:
     @staticmethod
     async def reject_seller(user_id: int) -> bool:
         """דחיית בקשת מוכר על ידי אדמין"""
+        # Backward compatible alias: "reject" == "block seller registration"
+        return await UserService.block_seller(user_id)
+
+    @staticmethod
+    async def block_seller(user_id: int) -> bool:
+        """חסימת בקשת מוכר (השבתה לרול buyer + סטטוס blocked)"""
         users = await database.get_users_collection()
         
         # החזרת המשתמש לסטטוס קונה רגיל
@@ -186,13 +192,15 @@ class UserService:
             {
                 "$set": {
                     "seller_status": "blocked",
-                    "role": UserRole.BUYER.value
+                    "role": UserRole.BUYER.value,
+                    "is_verified": False,
                 }
+                # לא מוחקים פרטי עסק/טלפון כדי לשמור שקיפות לאדמינים (Audit).
             }
         )
         
         if result.modified_count > 0:
-            logger.info(f"Rejected seller {user_id}")
+            logger.info(f"Blocked seller request {user_id}")
             return True
         return False
     

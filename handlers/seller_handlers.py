@@ -105,7 +105,7 @@ class SellerHandlers:
     @staticmethod
     async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """קליטת טלפון"""
-        phone = update.message.text.strip()
+        phone = (update.message.text or "").strip().replace("-", "").replace(" ", "")
         
         # וולידציה בסיסית
         if not phone.isdigit() or len(phone) < 9:
@@ -184,7 +184,7 @@ class SellerHandlers:
             admin_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ אשר מוכר", callback_data=f"approve_seller_{user.id}"),
-                    InlineKeyboardButton("❌ דחה בקשה", callback_data=f"reject_seller_{user.id}")
+                    InlineKeyboardButton("🚫 חסום מוכר", callback_data=f"block_seller_{user.id}")
                 ]
             ])
             

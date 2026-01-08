@@ -202,67 +202,53 @@ class AdminHandlers:
     
     @staticmethod
     async def reject_seller(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """דחיית מוכר"""
+        """דחיית מוכר (תאימות לאחור)"""
         query = update.callback_query
         await query.answer()
-        
+
         seller_id = int(query.data.replace("reject_seller_", ""))
+        # route to the new handler logic
+        query.data = f"block_seller_{seller_id}"
+        return await AdminHandlers.block_seller(update, context)
+
+    @staticmethod
+    async def block_seller(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """חסימת בקשת מוכר"""
+        query = update.callback_query
+        await query.answer()
+
+        seller_id = int(query.data.replace("block_seller_", ""))
         seller = await UserService.get_user(seller_id)
-        
-        # דחיית הבקשה
-        success = await UserService.reject_seller(seller_id)
-        
+
+        success = await UserService.block_seller(seller_id)
+
         if success:
             commercial = seller.commercial_name or seller.business_name or "מוכר"
-            
-            # שליחת הודעה למוכר
+
+            # הודעה למוכר
             try:
                 await context.bot.send_message(
                     seller_id,
-                    "❌ *הבקשה שלך נדחתה*\n\n"
-                    "לצערנו, בקשתך לרישום כמוכר לא אושרה.\n\n"
+                    "🚫 *הבקשה שלך נחסמה*\n\n"
+                    "לצערנו, בקשתך לרישום כמוכר לא אושרה כרגע.\n\n"
                     "אם אתה חושב שזו טעות, פנה לתמיכה: /support",
                     parse_mode="Markdown"
                 )
             except Exception as e:
                 logger.error(f"Failed to notify seller {seller_id}: {e}")
-            
+
             # עדכון הודעת האדמין
             admin_id = update.effective_user.id
-            new_text = query.message.text + f"\n\n❌ *נדחה* על ידי אדמין {admin_id}"
+            new_text = (query.message.text or "") + f"\n\n🚫 *נחסם* על ידי אדמין {admin_id}"
             try:
                 await query.edit_message_text(new_text, parse_mode="Markdown")
-            except:
+            except Exception:
                 await query.edit_message_text(
-                    f"❌ הבקשה של {commercial} נדחתה.",
+                    f"🚫 הבקשה של {commercial} נחסמה.",
                     reply_markup=Keyboards.back_button()
                 )
         else:
-            await query.edit_message_text("❌ הדחייה נכשלה.")
-        
-        # Legacy code removal - keep for backward compatibility
-        users = await database.get_users_collection()
-        result = await users.update_one(
-            {"user_id": seller_id},
-            {"$set": {"role": "buyer", "business_name": None, "phone": None, "id_number": None}}
-        )
-        
-        if result.modified_count > 0:
-            try:
-                await context.bot.send_message(
-                    seller_id,
-                    "❌ בקשתך לרישום כמוכר נדחתה.\n"
-                    "לפרטים נוספים, צור קשר עם התמיכה."
-                )
-            except:
-                pass
-            
-            await query.edit_message_text(
-                "✅ הבקשה נדחתה.",
-                reply_markup=Keyboards.back_button()
-            )
-        else:
-            await query.edit_message_text("❌ הדחייה נכשלה.")
+            await query.edit_message_text("❌ החסימה נכשלה.")
     
     @staticmethod
     async def show_payout_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):

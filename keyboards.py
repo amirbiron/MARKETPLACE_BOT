@@ -228,8 +228,8 @@ class Keyboards:
         """מקלדת לטיפול בבקשת מוכר"""
         keyboard = [
             [
-                InlineKeyboardButton("✅ אשר", callback_data=f"approve_seller_{seller_id}"),
-                InlineKeyboardButton("❌ דחה", callback_data=f"reject_seller_{seller_id}")
+                InlineKeyboardButton("✅ אשר מוכר", callback_data=f"approve_seller_{seller_id}"),
+                InlineKeyboardButton("🚫 חסום מוכר", callback_data=f"block_seller_{seller_id}")
             ],
             [InlineKeyboardButton("🔙 חזרה", callback_data="admin_seller_requests")]
         ]
