@@ -238,6 +238,7 @@ messages = await ChatService.get_chat_messages(chat_id, user_id)
 - `/chats` - הצ'אטים שלי
 - `/my_disputes` - המחלוקות שלי
 - `/rules` - תקנון
+- `/my_deposits` - צפייה בהיסטוריית ההפקדות
 
 ### מוכרים
 - `/upload` - העלאת קופון
