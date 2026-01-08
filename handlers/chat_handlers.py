@@ -220,6 +220,75 @@ class ChatHandlers:
         return WAITING_FOR_MESSAGE
 
     @staticmethod
+    async def start_chat_from_order(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        פתיחת צ'אט מתוך הזמנה (callback_data: chat_<order_id>).
+
+        הכפתור הזה מופיע תחת "ההזמנות שלי" ובתפריט הדיווח מהתראה.
+        """
+        query = update.callback_query
+        await query.answer()
+
+        from bson import ObjectId
+        from services.order_service import OrderService
+
+        user_id = update.effective_user.id
+        order_id_str = query.data.split("_", 1)[-1]
+
+        try:
+            order = await OrderService.get_order(ObjectId(order_id_str))
+        except Exception:
+            order = None
+
+        if not order:
+            await query.edit_message_text("❌ ההזמנה לא נמצאה או שאינה זמינה יותר.")
+            return ConversationHandler.END
+
+        # מי הצד השני?
+        if user_id == order.buyer_id:
+            buyer_id = order.buyer_id
+            seller_id = order.seller_id
+        elif user_id == order.seller_id:
+            # אם מוכר פותח צ'אט מתוך הזמנה, עדיין נשמור buyer/seller לפי ההזמנה
+            buyer_id = order.buyer_id
+            seller_id = order.seller_id
+        else:
+            await query.edit_message_text("❌ אין לך הרשאה לפתוח צ'אט להזמנה זו.")
+            return ConversationHandler.END
+
+        # יצירת/קבלת צ'אט קיים
+        chat_id = await ChatService.create_chat(buyer_id, seller_id)
+        if not chat_id:
+            await query.edit_message_text("❌ שגיאה ביצירת שיחה")
+            return ConversationHandler.END
+
+        context.user_data["current_chat_id"] = chat_id
+
+        # תצוגה קצרה + כפתורי רענון/סגירה (כמו ב-open_chat)
+        other_user_id = seller_id if user_id == buyer_id else buyer_id
+        other_user = await db.users.find_one({"user_id": other_user_id})
+        other_name = (
+            (other_user.get("business_name") if other_user else None)
+            or (other_user.get("first_name") if other_user else None)
+            or "משתמש"
+        )
+
+        keyboard = [[
+            InlineKeyboardButton("🔄 רענן", callback_data=f"chat_open_{chat_id}"),
+            InlineKeyboardButton("🚪 סגור שיחה", callback_data=f"chat_close_{chat_id}")
+        ]]
+
+        await query.edit_message_text(
+            f"💬 *שיחה עם {other_name}*\n\n"
+            f"השיחה נפתחה. כתוב הודעה למטה.\n\n"
+            f"💡 ההודעות אנונימיות - הצד השני לא רואה את המספר שלך",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
+        )
+
+        return WAITING_FOR_MESSAGE
+
+    @staticmethod
     async def cancel_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """ביטול שיחה"""
         context.user_data.pop("current_chat_id", None)
@@ -273,7 +342,9 @@ def get_chat_handlers():
     chat_conv = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(ChatHandlers.open_chat, pattern="^chat_open_"),
-            CallbackQueryHandler(ChatHandlers.start_chat_with_seller, pattern="^chat_seller_")
+            CallbackQueryHandler(ChatHandlers.start_chat_with_seller, pattern="^chat_seller_"),
+            # chat_<order_id> (ObjectId) - from order actions / report flow
+            CallbackQueryHandler(ChatHandlers.start_chat_from_order, pattern=r"^chat_[0-9a-fA-F]{24}$"),
         ],
         states={
             WAITING_FOR_MESSAGE: [

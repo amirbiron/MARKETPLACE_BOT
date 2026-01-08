@@ -12,16 +12,51 @@ logger = logging.getLogger(__name__)
 
 class UserService:
     """שירות לניהול משתמשים"""
+
+    @staticmethod
+    async def _find_user_doc(user_id: int) -> Optional[dict]:
+        """
+        מציאת מסמך משתמש בצורה תואמת לאחור.
+
+        בקוד הנוכחי המפתח הראשי הוא `user_id` (Telegram ID).
+        בגרסאות ישנות ייתכן שהמפתח נשמר בשדה `telegram_id`.
+        """
+        users = await database.get_users_collection()
+        user_data = await users.find_one({"user_id": user_id})
+        if user_data:
+            return user_data
+        # Backward compatibility (legacy schema)
+        return await users.find_one({"telegram_id": user_id})
     
     @staticmethod
     async def get_user(user_id: int) -> Optional[User]:
         """קבלת משתמש לפי ID"""
         users = await database.get_users_collection()
-        user_data = await users.find_one({"user_id": user_id})
-        
-        if user_data:
-            return User.from_dict(user_data)
-        return None
+        user_data = await UserService._find_user_doc(user_id)
+
+        if not user_data:
+            return None
+
+        # Best-effort migration: if we found a legacy `telegram_id` record, attach `user_id`
+        # so the rest of the codebase (which queries by user_id) can see it.
+        if user_data.get("telegram_id") == user_id and not user_data.get("user_id"):
+            legacy_updates = {"user_id": user_id}
+            # normalize legacy fields
+            if "verified" in user_data and "is_verified" not in user_data:
+                legacy_updates["is_verified"] = bool(user_data.get("verified"))
+            # normalize legacy role "seller"
+            if user_data.get("role") == "seller":
+                is_verified = bool(user_data.get("is_verified")) or bool(user_data.get("verified")) or bool(user_data.get("id_number"))
+                legacy_updates["role"] = UserRole.SELLER_VERIFIED.value if is_verified else UserRole.SELLER_UNVERIFIED.value
+            try:
+                await users.update_one({"_id": user_data["_id"]}, {"$set": legacy_updates})
+                # refresh to include migrated values
+                user_data = await users.find_one({"user_id": user_id}) or user_data
+            except Exception:
+                # If migration fails (e.g., duplicate key), still return what we have.
+                pass
+
+        return User.from_dict(user_data)
     
     @staticmethod
     async def create_user(
@@ -33,10 +68,17 @@ class UserService:
         """יצירת משתמש חדש"""
         users = await database.get_users_collection()
         
-        # בדיקה אם המשתמש כבר קיים
-        existing = await users.find_one({"user_id": user_id})
+        # בדיקה אם המשתמש כבר קיים (תואם לאחור גם ל-telegram_id)
+        existing = await UserService._find_user_doc(user_id)
         if existing:
             logger.info(f"User {user_id} already exists")
+            # Best-effort migrate legacy telegram_id->user_id
+            if existing.get("telegram_id") == user_id and not existing.get("user_id"):
+                try:
+                    await users.update_one({"_id": existing["_id"]}, {"$set": {"user_id": user_id}})
+                    existing = await users.find_one({"user_id": user_id}) or existing
+                except Exception:
+                    pass
             return User.from_dict(existing)
         
         user = User(
@@ -126,6 +168,9 @@ class UserService:
     ) -> bool:
         """עדכון פרטי מוכר"""
         users = await database.get_users_collection()
+
+        # Load current user to avoid accidentally downgrading verified sellers
+        current = await UserService._find_user_doc(user_id)
         
         update_data = {
             "business_name": business_name,
@@ -140,14 +185,24 @@ class UserService:
         if seller_status:
             update_data["seller_status"] = seller_status
         
-        # אם יש ת.ז, זה מוכר מאומת
+        # קביעת סטטוס אימות בצורה שלא "תדרוס" מוכר מאומת קיימת:
+        # - אם נשלחה ת.ז כעת -> מאומת
+        # - אחרת, אם קיימת ת.ז/אימות כבר במסד -> נשמור מאומת
+        # - אחרת -> לא מאומת
+        has_existing_id = bool(current.get("id_number")) if current else False
+        has_existing_verified = bool(current.get("is_verified")) if current else False
+
         if id_number:
             update_data["id_number"] = id_number
-            update_data["role"] = UserRole.SELLER_VERIFIED.value
             update_data["is_verified"] = True
+            update_data["role"] = UserRole.SELLER_VERIFIED.value
+        elif has_existing_id or has_existing_verified:
+            # Preserve verified seller state if already verified
+            update_data["is_verified"] = True
+            update_data["role"] = UserRole.SELLER_VERIFIED.value
         else:
-            update_data["role"] = UserRole.SELLER_UNVERIFIED.value
             update_data["is_verified"] = False
+            update_data["role"] = UserRole.SELLER_UNVERIFIED.value
         
         result = await users.update_one(
             {"user_id": user_id},

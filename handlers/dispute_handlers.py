@@ -270,7 +270,11 @@ def get_dispute_handlers():
     # Conversation לפתיחת מחלוקת
     open_dispute_conv = ConversationHandler(
         entry_points=[
-            CallbackQueryHandler(DisputeHandlers.start_dispute, pattern="^dispute_open_")
+            # Backward/forward compatible:
+            # - `report_issue_<order_id>` is used from order actions and notifications.
+            # - `dispute_open_<order_id>` is kept for older/alternate flows.
+            CallbackQueryHandler(DisputeHandlers.start_dispute, pattern="^report_issue_"),
+            CallbackQueryHandler(DisputeHandlers.start_dispute, pattern="^dispute_open_"),
         ],
         states={
             ENTER_DISPUTE_REASON: [
