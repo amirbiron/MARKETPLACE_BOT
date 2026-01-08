@@ -8,6 +8,8 @@ from services.user_service import UserService
 from services.coupon_service import CouponService
 from services.order_service import OrderService
 from services.fraud_detection_service import FraudDetectionService, FraudEventType, FraudRiskLevel
+from services.escrow_service import EscrowService
+from models import EscrowStatus
 from keyboards import Keyboards
 from utils import format_price, format_datetime
 from config import Config
@@ -1542,3 +1544,466 @@ User ID: `{seller.user_id}`
                 InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
             ]])
         )
+
+    # ==================== Escrow Management Handlers ====================
+
+    @staticmethod
+    async def escrow_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """תפריט ניהול Escrow"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+        
+        user_id = update.effective_user.id
+        if not await UserService.is_admin(user_id):
+            error_text = "❌ אין לך הרשאות אדמין."
+            if query:
+                await query.edit_message_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
+            return
+        
+        # קבלת סטטיסטיקות מהירות
+        stats = await EscrowService.get_escrow_stats()
+        
+        text = f"""
+🔐 *ניהול Escrow*
+
+📊 *מצב נוכחי:*
+💰 יתרת Escrow: {format_price(stats.get('escrow_balance', 0))}
+⏳ ממתינים לשחרור: {stats.get('total_held', 0)}
+⚖️ במחלוקת: {stats.get('total_disputed', 0)}
+✅ שוחררו (סה"כ): {stats.get('total_released', 0)}
+↩️ הוחזרו (סה"כ): {stats.get('total_refunded', 0)}
+
+⚡ *פעילות ב-24 שעות:*
+📥 נכנסו: {stats.get('recent_24h_held', 0)}
+📤 שוחררו: {stats.get('recent_24h_released', 0)}
+
+בחר פעולה:
+"""
+        
+        keyboard = Keyboards.escrow_management_keyboard()
+        
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת יתרת Escrow מפורטת"""
+        query = update.callback_query
+        await query.answer()
+        
+        balance = await EscrowService.get_escrow_balance()
+        stats = await EscrowService.get_escrow_stats()
+        
+        amounts = stats.get("amounts_by_status", {})
+        
+        text = f"""
+💰 *יתרת Escrow מפורטת*
+
+🔒 *סה"כ מוחזק:* {format_price(balance)}
+
+📊 *פילוח לפי סטטוס:*
+⏳ מוחזק (held): {format_price(amounts.get('held', 0))}
+⚖️ במחלוקת (disputed): {format_price(amounts.get('disputed', 0))}
+✅ שוחרר (released): {format_price(amounts.get('released', 0))}
+↩️ הוחזר (refunded): {format_price(amounts.get('refunded', 0))}
+
+📈 *סה"כ עסקאות:*
+⏳ מוחזקות: {stats.get('total_held', 0)}
+⚖️ במחלוקת: {stats.get('total_disputed', 0)}
+✅ הושלמו: {stats.get('total_released', 0)}
+↩️ הוחזרו: {stats.get('total_refunded', 0)}
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת עסקאות Escrow ממתינות לשחרור"""
+        query = update.callback_query
+        await query.answer()
+        
+        pending = await EscrowService.get_all_held_escrows(limit=15)
+        
+        if not pending:
+            await query.edit_message_text(
+                "✅ אין עסקאות Escrow ממתינות!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")
+                ]])
+            )
+            return
+        
+        text = f"⏳ *עסקאות Escrow ממתינות ({len(pending)}):*\n\n"
+        
+        items = []
+        for escrow in pending:
+            # חישוב זמן שנותר לשחרור
+            if escrow.release_scheduled_at:
+                time_left = escrow.release_scheduled_at - datetime.utcnow()
+                hours_left = max(0, int(time_left.total_seconds() // 3600))
+                minutes_left = max(0, int((time_left.total_seconds() % 3600) // 60))
+                time_str = f"{hours_left}:{minutes_left:02d}"
+            else:
+                time_str = "N/A"
+            
+            items.append((
+                f"💰 {format_price(escrow.amount)} | ⏰ {time_str}",
+                f"escrow_view_{str(escrow._id)}"
+            ))
+        
+        keyboard = Keyboards.escrow_list_keyboard(items, 0, 1, "escrow_pending")
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_disputed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת עסקאות Escrow במחלוקת"""
+        query = update.callback_query
+        await query.answer()
+        
+        disputed = await EscrowService.get_disputed_escrows(limit=15)
+        
+        if not disputed:
+            await query.edit_message_text(
+                "✅ אין עסקאות Escrow במחלוקת!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")
+                ]])
+            )
+            return
+        
+        text = f"⚖️ *עסקאות Escrow במחלוקת ({len(disputed)}):*\n\n"
+        
+        items = []
+        for escrow in disputed:
+            held_date = escrow.held_at.strftime("%d/%m") if escrow.held_at else "N/A"
+            
+            items.append((
+                f"⚖️ {format_price(escrow.amount)} | 📅 {held_date}",
+                f"escrow_view_{str(escrow._id)}"
+            ))
+        
+        keyboard = Keyboards.escrow_list_keyboard(items, 0, 1, "escrow_disputed")
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """צפייה בעסקת Escrow בודדת"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_view_", "")
+        escrow = await EscrowService.get_escrow_by_id(ObjectId(escrow_id))
+        
+        if not escrow:
+            await query.edit_message_text(
+                "❌ עסקת Escrow לא נמצאה",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")
+                ]])
+            )
+            return
+        
+        # קבלת פרטי משתמשים
+        buyer = await UserService.get_user(escrow.buyer_id)
+        seller = await UserService.get_user(escrow.seller_id)
+        
+        buyer_name = buyer.first_name if buyer else str(escrow.buyer_id)
+        seller_name = seller.business_name or (seller.first_name if seller else str(escrow.seller_id))
+        
+        status_display = Keyboards.escrow_status_display(escrow.status.value)
+        
+        # חישוב זמן שנותר
+        if escrow.status == EscrowStatus.HELD and escrow.release_scheduled_at:
+            time_left = escrow.release_scheduled_at - datetime.utcnow()
+            hours_left = max(0, int(time_left.total_seconds() // 3600))
+            minutes_left = max(0, int((time_left.total_seconds() % 3600) // 60))
+            time_str = f"{hours_left} שעות ו-{minutes_left} דקות"
+        else:
+            time_str = "N/A"
+        
+        text = f"""
+🔐 *פרטי עסקת Escrow*
+
+📊 *סטטוס:* {status_display}
+
+💰 *סכומים:*
+  • סכום עסקה: {format_price(escrow.amount)}
+  • עמלת קונה: {format_price(escrow.buyer_commission)}
+  • עמלת מוכר: {format_price(escrow.seller_commission)}
+  • נטו למוכר: {format_price(escrow.net_seller_amount)}
+
+👥 *משתתפים:*
+  • קונה: {buyer_name} (`{escrow.buyer_id}`)
+  • מוכר: {seller_name} (`{escrow.seller_id}`)
+
+📅 *תאריכים:*
+  • הוקפא: {escrow.held_at.strftime('%d/%m/%Y %H:%M') if escrow.held_at else 'N/A'}
+  • שחרור מתוכנן: {escrow.release_scheduled_at.strftime('%d/%m/%Y %H:%M') if escrow.release_scheduled_at else 'N/A'}
+  {"• שוחרר: " + escrow.released_at.strftime('%d/%m/%Y %H:%M') if escrow.released_at else ""}
+
+⏰ *זמן לשחרור:* {time_str}
+
+📝 *הערות:* {escrow.notes or 'אין'}
+"""
+        
+        keyboard = Keyboards.escrow_transaction_keyboard(escrow_id, str(escrow.order_id), escrow.status.value)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_release(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """שחרור כספים למוכר - אישור"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_release_", "")
+        escrow = await EscrowService.get_escrow_by_id(ObjectId(escrow_id))
+        
+        if not escrow:
+            await query.edit_message_text("❌ עסקת Escrow לא נמצאה")
+            return
+        
+        seller = await UserService.get_user(escrow.seller_id)
+        seller_name = seller.business_name or (seller.first_name if seller else str(escrow.seller_id))
+        
+        text = f"""
+⚠️ *אישור שחרור כספים*
+
+האם אתה בטוח שברצונך לשחרר:
+💰 {format_price(escrow.net_seller_amount)}
+
+למוכר: {seller_name}
+"""
+        
+        keyboard = Keyboards.escrow_confirm_action_keyboard(escrow_id, "release")
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """החזר כספים לקונה - אישור"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_refund_", "")
+        escrow = await EscrowService.get_escrow_by_id(ObjectId(escrow_id))
+        
+        if not escrow:
+            await query.edit_message_text("❌ עסקת Escrow לא נמצאה")
+            return
+        
+        buyer = await UserService.get_user(escrow.buyer_id)
+        buyer_name = buyer.first_name if buyer else str(escrow.buyer_id)
+        
+        text = f"""
+⚠️ *אישור החזר כספים*
+
+האם אתה בטוח שברצונך להחזיר:
+💰 {format_price(escrow.total_buyer_paid)}
+
+לקונה: {buyer_name}
+"""
+        
+        keyboard = Keyboards.escrow_confirm_action_keyboard(escrow_id, "refund")
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_confirm_release(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """אישור שחרור כספים למוכר"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_confirm_release_", "")
+        admin_id = update.effective_user.id
+        
+        escrow = await EscrowService.get_escrow_by_id(ObjectId(escrow_id))
+        if not escrow:
+            await query.edit_message_text("❌ עסקת Escrow לא נמצאה")
+            return
+        
+        success = await EscrowService.release_to_seller(
+            order_id=escrow.order_id,
+            admin_id=admin_id,
+            notes=f"שוחרר ידנית ע\"י אדמין {admin_id}"
+        )
+        
+        if success:
+            # שליחת הודעה למוכר
+            try:
+                await context.bot.send_message(
+                    escrow.seller_id,
+                    f"💰 *התקבלו כספים!*\n\n"
+                    f"סכום: {format_price(escrow.net_seller_amount)}\n"
+                    f"הכספים שוחררו לחשבונך.",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+            
+            await query.edit_message_text(
+                f"✅ שוחררו {format_price(escrow.net_seller_amount)} למוכר!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")
+                ]])
+            )
+        else:
+            await query.edit_message_text(
+                "❌ השחרור נכשל",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"escrow_view_{escrow_id}")
+                ]])
+            )
+
+    @staticmethod
+    async def escrow_confirm_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """אישור החזר כספים לקונה"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_confirm_refund_", "")
+        admin_id = update.effective_user.id
+        
+        escrow = await EscrowService.get_escrow_by_id(ObjectId(escrow_id))
+        if not escrow:
+            await query.edit_message_text("❌ עסקת Escrow לא נמצאה")
+            return
+        
+        success = await EscrowService.refund_to_buyer(
+            order_id=escrow.order_id,
+            admin_id=admin_id,
+            notes=f"הוחזר ידנית ע\"י אדמין {admin_id}"
+        )
+        
+        if success:
+            # עדכון סטטוס ההזמנה
+            await OrderService.refund_order(escrow.order_id, admin_id, "החזר כספים מ-Escrow")
+            
+            # שליחת הודעה לקונה
+            try:
+                await context.bot.send_message(
+                    escrow.buyer_id,
+                    f"↩️ *התקבל החזר כספים!*\n\n"
+                    f"סכום: {format_price(escrow.total_buyer_paid)}\n"
+                    f"הכספים הוחזרו לחשבונך.",
+                    parse_mode="Markdown"
+                )
+            except:
+                pass
+            
+            await query.edit_message_text(
+                f"✅ הוחזרו {format_price(escrow.total_buyer_paid)} לקונה!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")
+                ]])
+            )
+        else:
+            await query.edit_message_text(
+                "❌ ההחזר נכשל",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"escrow_view_{escrow_id}")
+                ]])
+            )
+
+    @staticmethod
+    async def escrow_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """סטטיסטיקות Escrow מפורטות"""
+        query = update.callback_query
+        await query.answer()
+        
+        stats = await EscrowService.get_escrow_stats()
+        
+        text = f"""
+📊 *סטטיסטיקות Escrow מפורטות*
+
+💰 *יתרה נוכחית:* {format_price(stats.get('escrow_balance', 0))}
+
+📈 *סטטוס עסקאות:*
+⏳ מוחזקות: {stats.get('total_held', 0)}
+⚖️ במחלוקת: {stats.get('total_disputed', 0)}
+✅ שוחררו למוכרים: {stats.get('total_released', 0)}
+↩️ הוחזרו לקונים: {stats.get('total_refunded', 0)}
+
+⚡ *פעילות ב-24 שעות:*
+📥 נכנסו ל-Escrow: {stats.get('recent_24h_held', 0)}
+📤 שוחררו מ-Escrow: {stats.get('recent_24h_released', 0)}
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_daily_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """דוח התאמה יומי"""
+        query = update.callback_query
+        await query.answer()
+        
+        report = await EscrowService.get_daily_reconciliation_report()
+        
+        text = f"""
+📋 *דוח התאמה יומי - {report.get('date', 'N/A')}*
+
+📥 *כניסות:*
+  • סכום: {format_price(report.get('funds_in', {}).get('total', 0))}
+  • מספר עסקאות: {report.get('funds_in', {}).get('count', 0)}
+
+📤 *יציאות - שחרור למוכרים:*
+  • סכום: {format_price(report.get('funds_released', {}).get('total', 0))}
+  • מספר עסקאות: {report.get('funds_released', {}).get('count', 0)}
+
+↩️ *יציאות - החזרים לקונים:*
+  • סכום: {format_price(report.get('funds_refunded', {}).get('total', 0))}
+  • מספר עסקאות: {report.get('funds_refunded', {}).get('count', 0)}
+
+📊 *סיכום:*
+  • סה"כ יציאות: {format_price(report.get('total_out', 0))}
+  • שינוי נטו: {format_price(report.get('net_change', 0))}
+  
+💰 *יתרה נוכחית:* {format_price(report.get('current_balance', 0))}
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @staticmethod
+    async def escrow_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת לוגים של עסקת Escrow"""
+        query = update.callback_query
+        await query.answer()
+        
+        escrow_id = query.data.replace("escrow_logs_", "")
+        logs = await EscrowService.get_escrow_logs(ObjectId(escrow_id), limit=20)
+        
+        if not logs:
+            await query.edit_message_text(
+                "📋 אין לוגים לעסקה זו",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"escrow_view_{escrow_id}")
+                ]])
+            )
+            return
+        
+        text = f"📋 *לוג פעולות Escrow*\n\n"
+        
+        action_names = {
+            "hold": "⏳ הקפאה",
+            "release": "✅ שחרור אוטומטי",
+            "admin_release": "✅ שחרור ידני",
+            "refund": "↩️ החזר אוטומטי",
+            "admin_refund": "↩️ החזר ידני",
+            "dispute": "⚖️ מחלוקת"
+        }
+        
+        for log in logs:
+            action = action_names.get(log.action, log.action)
+            date = log.created_at.strftime("%d/%m %H:%M") if log.created_at else "N/A"
+            
+            text += f"{action} | {format_price(log.amount)} | {date}\n"
+            if log.notes:
+                text += f"   📝 {log.notes[:30]}\n"
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data=f"escrow_view_{escrow_id}")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")

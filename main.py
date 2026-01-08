@@ -791,6 +791,35 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.system_settings, pattern="^sys_settings$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.sys_back_handler, pattern="^sys_back$"))
     
+    # Fraud management callbacks
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_menu, pattern="^fraud_menu$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_pending_events, pattern="^fraud_pending_events$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_view_event, pattern="^fraud_event_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_mark_reviewed, pattern="^fraud_mark_reviewed_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_stats, pattern="^fraud_stats$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_blocked_users, pattern="^fraud_blocked_users$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_view_user, pattern="^fraud_view_user_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_user_history, pattern="^fraud_user_history_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_block_user, pattern="^fraud_block_user_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_unblock_user, pattern="^fraud_unblock_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_keep_blocked, pattern="^fraud_keep_blocked_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_warn_user, pattern="^fraud_warn_user_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.fraud_calc_trust, pattern="^fraud_calc_trust_"))
+    
+    # Escrow management callbacks
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_menu, pattern="^escrow_menu$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_balance, pattern="^escrow_balance$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_pending, pattern="^escrow_pending$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_disputed, pattern="^escrow_disputed$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_view, pattern="^escrow_view_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_release, pattern="^escrow_release_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_refund, pattern="^escrow_refund_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_confirm_release, pattern="^escrow_confirm_release_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_confirm_refund, pattern="^escrow_confirm_refund_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_stats, pattern="^escrow_stats$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_daily_report, pattern="^escrow_daily_report$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.escrow_logs, pattern="^escrow_logs_"))
+    
     # Broadcast conversation
     from handlers.admin_handlers import BROADCAST_MESSAGE, ADD_BALANCE_AMOUNT
     broadcast_conv = ConversationHandler(

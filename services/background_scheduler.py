@@ -7,6 +7,7 @@ from services.auction_service import AuctionService
 from services.favorites_service import FavoritesService
 from services.notification_service import NotificationService
 from services.fraud_detection_service import FraudDetectionService
+from services.escrow_service import EscrowService
 from database import db
 from config import Config
 import logging
@@ -46,6 +47,9 @@ class BackgroundScheduler:
             asyncio.create_task(self._run_fraud_detection()),
             asyncio.create_task(self._check_duplicate_coupons()),
             asyncio.create_task(self._update_trust_scores()),
+            # Escrow Tasks
+            asyncio.create_task(self._process_escrow_releases()),
+            asyncio.create_task(self._escrow_daily_reconciliation()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -427,6 +431,62 @@ class BackgroundScheduler:
                 
             except Exception as e:
                 logger.error(f"Error updating trust scores: {e}")
+
+            await asyncio.sleep(86400)  # יום
+
+    # ==================== Escrow Tasks ====================
+
+    async def _process_escrow_releases(self):
+        """
+        שחרור אוטומטי של כספים מ-Escrow - כל 15 דקות
+        
+        מחפש עסקאות Escrow שעבר זמן ההמתנה שלהן (24 שעות)
+        ומשחרר את הכספים אוטומטית למוכרים
+        """
+        while self.running:
+            try:
+                logger.debug("Processing escrow auto-releases...")
+                
+                released_count = await EscrowService.process_auto_releases()
+                
+                if released_count > 0:
+                    logger.info(f"Auto-released {released_count} escrow transactions to sellers")
+                    
+            except Exception as e:
+                logger.error(f"Error processing escrow releases: {e}")
+
+            await asyncio.sleep(900)  # 15 דקות
+
+    async def _escrow_daily_reconciliation(self):
+        """
+        דוח התאמה יומי ל-Escrow - כל יום בחצות
+        
+        מייצר דוח התאמה יומי ושולח התראה לאדמינים
+        אם יש חוסר התאמה
+        """
+        while self.running:
+            try:
+                logger.info("Running daily escrow reconciliation...")
+                
+                # קבלת דוח יומי
+                report = await EscrowService.get_daily_reconciliation_report()
+                
+                # בדיקת חוסר התאמה
+                net_change = report.get("net_change", 0)
+                current_balance = report.get("current_balance", 0)
+                
+                logger.info(
+                    f"Escrow daily report: "
+                    f"in={report.get('funds_in', {}).get('total', 0):.2f}, "
+                    f"out={report.get('total_out', 0):.2f}, "
+                    f"net={net_change:.2f}, "
+                    f"balance={current_balance:.2f}"
+                )
+                
+                # אפשר להוסיף כאן שליחת התראות לאדמינים אם יש בעיות
+                
+            except Exception as e:
+                logger.error(f"Error in escrow daily reconciliation: {e}")
 
             await asyncio.sleep(86400)  # יום
 
