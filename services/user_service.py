@@ -219,3 +219,18 @@ class UserService:
             logger.info(f"Set user {user_id} as admin")
             return True
         return False
+    
+    @staticmethod
+    async def update_notifications_setting(user_id: int, enabled: bool) -> bool:
+        """עדכון הגדרת התראות"""
+        users = await database.get_users_collection()
+        
+        result = await users.update_one(
+            {"user_id": user_id},
+            {"$set": {"notifications_enabled": enabled}}
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Updated notifications for user {user_id}: {enabled}")
+            return True
+        return False

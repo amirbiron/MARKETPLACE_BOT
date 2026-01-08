@@ -33,6 +33,11 @@ class Keyboards:
                 KeyboardButton("💸 משיכת כספים"),
                 KeyboardButton("📈 סטטיסטיקות")
             ])
+        else:
+            # הצג כפתור "הפוך למוכר" רק למשתמשים שאינם מוכרים
+            keyboard.append([
+                KeyboardButton("🏪 הפוך למוכר")
+            ])
         
         if user_role == UserRole.ADMIN:
             keyboard.append([
