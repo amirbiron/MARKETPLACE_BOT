@@ -292,3 +292,61 @@ class FavoritesService:
         except Exception as e:
             logger.error(f"Error cleaning up favorites: {e}")
             return 0
+
+    @staticmethod
+    async def notify_expiring_favorites():
+        """התראה על קופונים במועדפים שפג תוקפם - יום לפני - לרוץ ב-background"""
+        try:
+            from datetime import timedelta
+
+            # מציאת קופונים שפוגים בעוד 1-2 ימים
+            tomorrow = datetime.utcnow() + timedelta(days=1)
+            day_after = datetime.utcnow() + timedelta(days=2)
+
+            expiring_coupons = await db.coupons.find({
+                "status": "active",
+                "expires_at": {
+                    "$gte": tomorrow,
+                    "$lt": day_after
+                }
+            }).to_list(length=None)
+
+            notified_count = 0
+
+            for coupon in expiring_coupons:
+                coupon_id = coupon["_id"]
+
+                # מציאת משתמשים שהקופון במועדפים שלהם
+                favorites = await db.favorites.find({
+                    "coupon_id": coupon_id,
+                    "notified_expiry": {"$ne": True}
+                }).to_list(length=None)
+
+                for fav in favorites:
+                    # חישוב ימים שנותרו
+                    time_left = coupon["expires_at"] - datetime.utcnow()
+                    days_left = max(1, int(time_left.total_seconds() // 86400))
+
+                    # שליחת התראה
+                    from services.notification_service import NotificationService
+                    await NotificationService.notify_favorite_expiring(
+                        user_id=fav["user_id"],
+                        coupon_id=str(coupon_id),
+                        coupon_title=coupon.get("title", "קופון"),
+                        days_left=days_left
+                    )
+
+                    # סימון שנשלחה התראה
+                    await db.favorites.update_one(
+                        {"_id": fav["_id"]},
+                        {"$set": {"notified_expiry": True}}
+                    )
+
+                    notified_count += 1
+
+            logger.info(f"Notified {notified_count} users about expiring favorites")
+            return notified_count
+
+        except Exception as e:
+            logger.error(f"Error notifying expiring favorites: {e}")
+            return 0

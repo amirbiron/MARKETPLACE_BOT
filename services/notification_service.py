@@ -312,6 +312,22 @@ class NotificationService:
         )
 
     @staticmethod
+    async def notify_favorite_expiring(user_id: int, coupon_id: str, coupon_title: str, days_left: int):
+        """התראה על פקיעת תוקף קופון במועדפים"""
+        if days_left == 1:
+            time_text = "מחר"
+        else:
+            time_text = f"בעוד {days_left} ימים"
+
+        await NotificationService.send_notification(
+            user_id=user_id,
+            title=f"⏰ קופון במועדפים פג תוקף {time_text}",
+            message=f"הקופון '{coupon_title}' שבמועדפים שלך עומד לפוג!\n\nכדאי לקנות אותו לפני שייגמר.",
+            notification_type="favorite_expiring",
+            data={"coupon_id": coupon_id, "days_left": days_left}
+        )
+
+    @staticmethod
     async def cleanup_old_notifications(days: int = 30):
         """ניקוי התראות ישנות - לרוץ ב-background"""
         try:

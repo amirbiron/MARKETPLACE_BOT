@@ -1,12 +1,13 @@
 """
 Handlers לקונים - רכישת קופונים
 """
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from bson import ObjectId
 from services.user_service import UserService
 from services.coupon_service import CouponService
 from services.order_service import OrderService
+from services.favorites_service import FavoritesService
 from keyboards import Keyboards
 from utils import format_price, format_datetime, get_star_rating, calculate_discount_percent
 from config import Config
@@ -122,8 +123,11 @@ class BuyerHandlers:
 {coupon.description or 'אין תיאור'}
 """
         
-        # בדיקה אם בmועדפים (TODO: implement favorites)
-        is_favorite = False
+        # בדיקה אם במועדפים
+        is_favorite = await FavoritesService.is_favorite(
+            user_id=update.effective_user.id,
+            coupon_id=str(coupon._id)
+        )
         
         keyboard = Keyboards.coupon_details_keyboard(
             str(coupon._id),
@@ -622,3 +626,188 @@ class BuyerHandlers:
 """
 
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    # ===== מערכת מועדפים =====
+
+    @staticmethod
+    async def show_my_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת המועדפים שלי"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+
+        user_id = update.effective_user.id
+        page = context.user_data.get("favorites_page", 0)
+
+        # קבלת מועדפים
+        favorites = await FavoritesService.get_user_favorites(user_id, page)
+        total_count = await FavoritesService.get_favorites_count(user_id)
+
+        if not favorites:
+            text = "⭐ *המועדפים שלי*\n\nאין לך קופונים במועדפים עדיין.\n\nלחץ על ⭐ בדף קופון כדי להוסיף למועדפים!"
+            keyboard = Keyboards.back_button()
+
+            if query:
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            return
+
+        # בניית רשימת מועדפים
+        items = []
+        for fav_data in favorites:
+            coupon = fav_data["coupon"]
+            price_dropped = fav_data.get("price_dropped", False)
+            price_change = fav_data.get("price_change", 0)
+
+            discount = calculate_discount_percent(coupon.get("original_price", 0), coupon.get("sale_price", 0))
+
+            # אינדיקטור לירידת מחיר
+            price_indicator = ""
+            if price_dropped and price_change > 0:
+                price_indicator = f" 📉-{format_price(price_change)}"
+
+            text_item = f"⭐ {coupon.get('title', 'קופון')} - {format_price(coupon.get('sale_price', 0))} ({discount}% הנחה){price_indicator}"
+            items.append((text_item, f"coupon_{str(coupon['_id'])}"))
+
+        # חישוב עמודים
+        total_pages = (total_count + Config.ITEMS_PER_PAGE - 1) // Config.ITEMS_PER_PAGE
+
+        # יצירת מקלדת עם פגינציה
+        keyboard = Keyboards.favorites_list_keyboard(items, page, total_pages)
+
+        text = f"⭐ *המועדפים שלי*\n\n📊 סה\"כ: {total_count} קופונים\n\nבחר קופון לצפייה:"
+
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def add_to_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הוספת קופון למועדפים"""
+        query = update.callback_query
+        await query.answer()
+
+        coupon_id = query.data.replace("fav_", "")
+        user_id = update.effective_user.id
+
+        # הוספה למועדפים
+        error = await FavoritesService.add_favorite(user_id, coupon_id)
+
+        if error:
+            await query.answer(error, show_alert=True)
+        else:
+            await query.answer("⭐ נוסף למועדפים!", show_alert=True)
+
+            # רענון דף הקופון עם הכפתור המעודכן
+            coupon = await CouponService.get_coupon(ObjectId(coupon_id))
+
+            if coupon and coupon.status.value == "active":
+                # קבלת פרטי מוכר
+                seller = await UserService.get_user(coupon.seller_id)
+                seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+                rating = get_star_rating(seller.rating_average) if seller else "⭐ חדש"
+
+                # חישוב מחיר סופי
+                buyer_commission = coupon.sale_price * Config.BUYER_COMMISSION
+                total_price = coupon.sale_price + buyer_commission
+                discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
+
+                text = f"""
+🎫 *{coupon.title}*
+
+📁 קטגוריה: {coupon.category}
+💰 מחיר מקורי: ~{format_price(coupon.original_price)}~
+💵 מחיר מבצע: *{format_price(coupon.sale_price)}*
+🏷️ הנחה: *{discount}%*
+
+➕ עמלת קנייה (2%): {format_price(buyer_commission)}
+💳 *סה"כ לתשלום: {format_price(total_price)}*
+
+👤 מוכר: {seller_name}
+⭐ דירוג: {rating} ({seller.rating_count} ביקורות)
+
+📝 תיאור:
+{coupon.description or 'אין תיאור'}
+"""
+
+                keyboard = Keyboards.coupon_details_keyboard(
+                    coupon_id,
+                    coupon.seller_id,
+                    user_id,
+                    is_favorite=True
+                )
+
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def remove_from_favorites(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הסרת קופון ממועדפים"""
+        query = update.callback_query
+        await query.answer()
+
+        coupon_id = query.data.replace("unfav_", "")
+        user_id = update.effective_user.id
+
+        # הסרה ממועדפים
+        error = await FavoritesService.remove_favorite(user_id, coupon_id)
+
+        if error:
+            await query.answer(error, show_alert=True)
+        else:
+            await query.answer("💔 הוסר מהמועדפים", show_alert=True)
+
+            # רענון דף הקופון עם הכפתור המעודכן
+            coupon = await CouponService.get_coupon(ObjectId(coupon_id))
+
+            if coupon and coupon.status.value == "active":
+                # קבלת פרטי מוכר
+                seller = await UserService.get_user(coupon.seller_id)
+                seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+                rating = get_star_rating(seller.rating_average) if seller else "⭐ חדש"
+
+                # חישוב מחיר סופי
+                buyer_commission = coupon.sale_price * Config.BUYER_COMMISSION
+                total_price = coupon.sale_price + buyer_commission
+                discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
+
+                text = f"""
+🎫 *{coupon.title}*
+
+📁 קטגוריה: {coupon.category}
+💰 מחיר מקורי: ~{format_price(coupon.original_price)}~
+💵 מחיר מבצע: *{format_price(coupon.sale_price)}*
+🏷️ הנחה: *{discount}%*
+
+➕ עמלת קנייה (2%): {format_price(buyer_commission)}
+💳 *סה"כ לתשלום: {format_price(total_price)}*
+
+👤 מוכר: {seller_name}
+⭐ דירוג: {rating} ({seller.rating_count} ביקורות)
+
+📝 תיאור:
+{coupon.description or 'אין תיאור'}
+"""
+
+                keyboard = Keyboards.coupon_details_keyboard(
+                    coupon_id,
+                    coupon.seller_id,
+                    user_id,
+                    is_favorite=False
+                )
+
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def favorites_pagination(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ניווט בין עמודי מועדפים"""
+        query = update.callback_query
+        await query.answer()
+
+        # חילוץ מספר העמוד מה-callback_data
+        page = int(query.data.replace("favorites_page_", ""))
+        context.user_data["favorites_page"] = page
+
+        # הצגת העמוד המבוקש
+        await BuyerHandlers.show_my_favorites(update, context)
