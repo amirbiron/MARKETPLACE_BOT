@@ -37,6 +37,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Silence noisy HTTP client logs (python-telegram-bot uses httpx under the hood)
+# These logs can include the bot token inside the request URL.
+if not Config.DEBUG:
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת /start - התחלה"""
