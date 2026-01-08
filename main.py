@@ -362,9 +362,9 @@ async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if text == "🔧 ניהול מערכת":
         return await AdminHandlers.system_management_menu(update, context)
 
-    # Not implemented yet
-    if text in {"⭐ המועדפים שלי"}:
-        return await update.message.reply_text("⏳ הפיצ'ר הזה עדיין בפיתוח. בקרוב!")
+    # מועדפים
+    if text == "⭐ המועדפים שלי":
+        return await BuyerHandlers.show_my_favorites(update, context)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בשגיאות"""
@@ -513,6 +513,12 @@ def main():
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_purchase, pattern="^confirm_buy_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.show_order_details, pattern="^order_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_order_received, pattern="^confirm_order_"))
+    
+    # Favorites handlers
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.show_my_favorites, pattern="^my_favorites$"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.add_to_favorites, pattern="^fav_"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.remove_from_favorites, pattern="^unfav_"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.favorites_pagination, pattern="^favorites_page_"))
     # Rating conversation (rate_ -> rating_ -> comment text)
     rating_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(BuyerHandlers.start_rating, pattern="^rate_")],

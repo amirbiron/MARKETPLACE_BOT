@@ -236,3 +236,34 @@ class Keyboards:
             [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def favorites_list_keyboard(
+        items: List[Tuple[str, str]],
+        current_page: int,
+        total_pages: int
+    ) -> InlineKeyboardMarkup:
+        """מקלדת רשימת מועדפים עם פגינציה"""
+        keyboard = []
+
+        # הוספת כל הפריטים
+        for text, callback_data in items:
+            keyboard.append([InlineKeyboardButton(text, callback_data=callback_data)])
+
+        # ניווט בין עמודים
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"favorites_page_{current_page-1}"))
+
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page+1}/{total_pages}", callback_data="ignore"))
+
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"favorites_page_{current_page+1}"))
+
+            keyboard.append(nav_row)
+
+        # כפתור חזרה
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
+
+        return InlineKeyboardMarkup(keyboard)

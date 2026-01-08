@@ -40,6 +40,7 @@ class BackgroundScheduler:
             asyncio.create_task(self._check_expired_coupons()),
             asyncio.create_task(self._notify_auction_ending()),
             asyncio.create_task(self._notify_expiring_coupons()),
+            asyncio.create_task(self._notify_expiring_favorites()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -288,6 +289,20 @@ class BackgroundScheduler:
 
             except Exception as e:
                 logger.error(f"Error notifying expiring coupons: {e}")
+
+            await asyncio.sleep(43200)  # 12 שעות
+
+
+    async def _notify_expiring_favorites(self):
+        """התראה למשתמשים על קופונים במועדפים שעומדים לפוג - כל 12 שעות"""
+        while self.running:
+            try:
+                logger.debug("Checking expiring favorites...")
+                count = await FavoritesService.notify_expiring_favorites()
+                if count > 0:
+                    logger.info(f"Notified {count} users about expiring favorites")
+            except Exception as e:
+                logger.error(f"Error notifying expiring favorites: {e}")
 
             await asyncio.sleep(43200)  # 12 שעות
 

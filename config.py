@@ -31,8 +31,11 @@ class Config:
     
     # Marketplace Settings
     BUYER_COMMISSION_RATE: float = 0.02  # 2% עמלת קונה
+    BUYER_COMMISSION: float = 0.02  # Alias for BUYER_COMMISSION_RATE
     VERIFIED_SELLER_COMMISSION_RATE: float = 0.03  # 3% מוכר מאומת
+    VERIFIED_SELLER_COMMISSION: float = 0.03  # Alias
     UNVERIFIED_SELLER_COMMISSION_RATE: float = 0.05  # 5% מוכר לא מאומת
+    UNVERIFIED_SELLER_COMMISSION: float = 0.05  # Alias
     SELLER_COMMISSION_RATE: float = 0.04  # 4% עמלה כללית למוכר
     WITHDRAWAL_COMMISSION: float = 0.01  # 1% עמלת משיכה
     MIN_WITHDRAWAL_AMOUNT: int = 200  # מינימום 200₪ למשיכה
