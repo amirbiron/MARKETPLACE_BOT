@@ -1,6 +1,7 @@
 """
 Handlers לאדמינים - ניהול המערכת
 """
+from enum import Enum
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from bson import ObjectId
@@ -201,10 +202,13 @@ class AdminHandlers:
                 # שליחת תפריט מעודכן כדי שהכפתורים יתעדכנו אצל המוכר
                 updated_seller = await UserService.get_user(seller_id)
                 if updated_seller:
+                    seller_status = getattr(updated_seller, 'seller_status', None)
+                    if isinstance(seller_status, Enum):
+                        seller_status = seller_status.value
                     await context.bot.send_message(
                         chat_id=seller_id,
                         text="🏠 *התפריט שלך עודכן*",
-                        reply_markup=Keyboards.main_menu(updated_seller.role),
+                        reply_markup=Keyboards.main_menu(updated_seller.role, seller_status),
                         parse_mode="Markdown",
                     )
             except Exception as e:

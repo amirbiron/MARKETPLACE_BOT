@@ -294,13 +294,14 @@ class UserService:
         if not user_data:
             return False
 
-        # קבע role אם המשתמש עדיין "buyer" (תאימות לאחור לנתונים ישנים)
         current_role = user_data.get("role", UserRole.BUYER.value)
         is_admin = current_role == UserRole.ADMIN.value
         is_verified = bool(user_data.get("is_verified")) or bool(user_data.get("id_number"))
 
+        # תמיד נגדיר את ה-role כשמאשרים מוכר (תיקון באג: מוכר שאושר אבל role לא עודכן)
+        # רק לא נדרוס role של אדמין
         update_set = {"seller_status": "approved"}
-        if not is_admin and current_role not in [UserRole.SELLER_VERIFIED.value, UserRole.SELLER_UNVERIFIED.value]:
+        if not is_admin:
             update_set["role"] = UserRole.SELLER_VERIFIED.value if is_verified else UserRole.SELLER_UNVERIFIED.value
 
         result = await users.update_one(UserService._user_selector(user_id), {"$set": update_set})
@@ -389,10 +390,38 @@ class UserService:
     
     @staticmethod
     async def is_seller(user_id: int) -> bool:
-        """בדיקה האם המשתמש הוא מוכר"""
+        """בדיקה האם המשתמש הוא מוכר
+        
+        בודק גם לפי role וגם לפי seller_status כדי לתפוס מקרים של 
+        חוסר עקביות בנתונים (לדוגמה: seller_status=approved אבל role=buyer)
+        אם נמצא חוסר עקביות - מתקן אוטומטית את ה-role
+        """
         user = await UserService.get_user(user_id)
         if user:
-            return user.role in [UserRole.SELLER_VERIFIED, UserRole.SELLER_UNVERIFIED]
+            # בדיקה ראשונית לפי role
+            if user.role in [UserRole.SELLER_VERIFIED, UserRole.SELLER_UNVERIFIED]:
+                return True
+            # בדיקת fallback: אם seller_status הוא approved, המשתמש הוא מוכר
+            seller_status = getattr(user, 'seller_status', None)
+            if seller_status:
+                # אם seller_status הוא Enum, קבל את הערך
+                if hasattr(seller_status, 'value'):
+                    seller_status = seller_status.value
+                if seller_status == "approved":
+                    # תיקון אוטומטי: עדכן את ה-role אם נמצא חוסר עקביות
+                    logger.warning(f"User {user_id} has seller_status=approved but role={user.role.value}. Auto-fixing...")
+                    try:
+                        users = await database.get_users_collection()
+                        is_verified = getattr(user, 'is_verified', False) or bool(getattr(user, 'id_number', None))
+                        new_role = UserRole.SELLER_VERIFIED.value if is_verified else UserRole.SELLER_UNVERIFIED.value
+                        await users.update_one(
+                            UserService._user_selector(user_id),
+                            {"$set": {"role": new_role}}
+                        )
+                        logger.info(f"Auto-fixed user {user_id} role to {new_role}")
+                    except Exception as e:
+                        logger.error(f"Failed to auto-fix user {user_id} role: {e}")
+                    return True
         return False
     
     @staticmethod
