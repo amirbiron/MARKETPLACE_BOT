@@ -56,6 +56,15 @@ class PayoutStatus(str, Enum):
     COMPLETED = "completed"
 
 
+class EscrowStatus(str, Enum):
+    """סטטוסי Escrow"""
+    HELD = "held"  # כספים מוחזקים ב-Escrow
+    RELEASED = "released"  # שוחררו למוכר
+    REFUNDED = "refunded"  # הוחזרו לקונה
+    DISPUTED = "disputed"  # במחלוקת
+    CANCELLED = "cancelled"  # בוטל
+
+
 class FraudEventType(str, Enum):
     """סוגי אירועי הונאה"""
     DUPLICATE_COUPON = "duplicate_coupon"  # קופון כפול
@@ -567,5 +576,149 @@ class FraudLog:
             reviewed_by=data.get("reviewed_by"),
             reviewed_at=data.get("reviewed_at"),
             review_notes=data.get("review_notes"),
+            created_at=data.get("created_at"),
+        )
+
+
+class EscrowTransaction:
+    """מודל עסקת Escrow"""
+    
+    def __init__(
+        self,
+        order_id: ObjectId,
+        buyer_id: int,
+        seller_id: int,
+        amount: float,
+        buyer_commission: float = 0.0,
+        seller_commission: float = 0.0,
+        status: EscrowStatus = EscrowStatus.HELD,
+        held_at: Optional[datetime] = None,
+        released_at: Optional[datetime] = None,
+        released_to: Optional[str] = None,  # "buyer" or "seller"
+        release_scheduled_at: Optional[datetime] = None,  # זמן שחרור מתוכנן
+        notes: Optional[str] = None,
+        admin_id: Optional[int] = None,  # אדמין שביצע פעולה ידנית
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.order_id = order_id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.amount = amount
+        self.buyer_commission = buyer_commission
+        self.seller_commission = seller_commission
+        self.status = status
+        self.held_at = held_at or datetime.utcnow()
+        self.released_at = released_at
+        self.released_to = released_to
+        self.release_scheduled_at = release_scheduled_at or (datetime.utcnow() + timedelta(hours=24))
+        self.notes = notes
+        self.admin_id = admin_id
+    
+    @property
+    def net_seller_amount(self) -> float:
+        """סכום נטו שהמוכר מקבל"""
+        return self.amount - self.seller_commission
+    
+    @property
+    def total_buyer_paid(self) -> float:
+        """סכום כולל ששילם הקונה"""
+        return self.amount + self.buyer_commission
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "order_id": self.order_id,
+            "buyer_id": self.buyer_id,
+            "seller_id": self.seller_id,
+            "amount": self.amount,
+            "buyer_commission": self.buyer_commission,
+            "seller_commission": self.seller_commission,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "held_at": self.held_at,
+            "released_at": self.released_at,
+            "released_to": self.released_to,
+            "release_scheduled_at": self.release_scheduled_at,
+            "notes": self.notes,
+            "admin_id": self.admin_id,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EscrowTransaction":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            order_id=data["order_id"],
+            buyer_id=data["buyer_id"],
+            seller_id=data["seller_id"],
+            amount=data["amount"],
+            buyer_commission=data.get("buyer_commission", 0.0),
+            seller_commission=data.get("seller_commission", 0.0),
+            status=EscrowStatus(data.get("status", "held")),
+            held_at=data.get("held_at"),
+            released_at=data.get("released_at"),
+            released_to=data.get("released_to"),
+            release_scheduled_at=data.get("release_scheduled_at"),
+            notes=data.get("notes"),
+            admin_id=data.get("admin_id"),
+        )
+
+
+class EscrowLog:
+    """מודל לוג פעולות Escrow - לשקיפות ומעקב"""
+    
+    def __init__(
+        self,
+        escrow_id: ObjectId,
+        action: str,  # "hold", "release", "refund", "dispute", "admin_release", "admin_refund"
+        amount: float,
+        from_account: str,  # "buyer", "escrow", "system"
+        to_account: str,  # "escrow", "seller", "buyer"
+        performed_by: Optional[int] = None,  # user_id או admin_id
+        notes: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.escrow_id = escrow_id
+        self.action = action
+        self.amount = amount
+        self.from_account = from_account
+        self.to_account = to_account
+        self.performed_by = performed_by
+        self.notes = notes
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "escrow_id": self.escrow_id,
+            "action": self.action,
+            "amount": self.amount,
+            "from_account": self.from_account,
+            "to_account": self.to_account,
+            "performed_by": self.performed_by,
+            "notes": self.notes,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EscrowLog":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            escrow_id=data["escrow_id"],
+            action=data["action"],
+            amount=data["amount"],
+            from_account=data["from_account"],
+            to_account=data["to_account"],
+            performed_by=data.get("performed_by"),
+            notes=data.get("notes"),
             created_at=data.get("created_at"),
         )

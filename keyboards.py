@@ -211,6 +211,7 @@ class Keyboards:
             [InlineKeyboardButton("💸 בקשות משיכה", callback_data="admin_payout_requests")],
             [InlineKeyboardButton("💰 בקשות הפקדה", callback_data="admin_deposit_requests")],
             [InlineKeyboardButton("⚖️ מחלוקות פתוחות", callback_data="admin_disputes")],
+            [InlineKeyboardButton("🔐 ניהול Escrow", callback_data="escrow_menu")],
             [InlineKeyboardButton("🛡️ ניהול הונאות", callback_data="fraud_menu")],
             [InlineKeyboardButton("📩 פניות תמיכה", callback_data="admin_support_tickets")],
             [InlineKeyboardButton("💵 הוספת יתרה", callback_data="admin_add_balance")],
@@ -472,3 +473,92 @@ class Keyboards:
         bar = "█" * filled + "░" * empty
         
         return f"{emoji} {score}/100 - {level}\n[{bar}]"
+
+    # ==================== Escrow Keyboards ====================
+
+    @staticmethod
+    def escrow_management_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת ניהול Escrow"""
+        keyboard = [
+            [InlineKeyboardButton("💰 יתרת Escrow", callback_data="escrow_balance")],
+            [InlineKeyboardButton("⏳ ממתינים לשחרור", callback_data="escrow_pending")],
+            [InlineKeyboardButton("⚖️ במחלוקת", callback_data="escrow_disputed")],
+            [InlineKeyboardButton("📊 סטטיסטיקות", callback_data="escrow_stats")],
+            [InlineKeyboardButton("📋 דוח יומי", callback_data="escrow_daily_report")],
+            [InlineKeyboardButton("🔙 חזרה לפאנל אדמין", callback_data="admin_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def escrow_transaction_keyboard(escrow_id: str, order_id: str, status: str) -> InlineKeyboardMarkup:
+        """מקלדת לעסקת Escrow בודדת"""
+        keyboard = []
+        
+        # פעולות תלויות סטטוס
+        if status in ["held", "disputed"]:
+            keyboard.append([
+                InlineKeyboardButton("✅ שחרר למוכר", callback_data=f"escrow_release_{escrow_id}"),
+                InlineKeyboardButton("↩️ החזר לקונה", callback_data=f"escrow_refund_{escrow_id}")
+            ])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("📦 צפה בהזמנה", callback_data=f"order_{order_id}")],
+            [InlineKeyboardButton("📋 לוג פעולות", callback_data=f"escrow_logs_{escrow_id}")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="escrow_pending")]
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def escrow_confirm_action_keyboard(escrow_id: str, action: str) -> InlineKeyboardMarkup:
+        """מקלדת אישור פעולת Escrow"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ אשר", callback_data=f"escrow_confirm_{action}_{escrow_id}"),
+                InlineKeyboardButton("❌ ביטול", callback_data=f"escrow_view_{escrow_id}")
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def escrow_list_keyboard(
+        items: List[Tuple[str, str]],
+        current_page: int,
+        total_pages: int,
+        prefix: str = "escrow"
+    ) -> InlineKeyboardMarkup:
+        """מקלדת רשימת Escrow עם פגינציה"""
+        keyboard = []
+        
+        # הוספת כל הפריטים
+        for text, callback_data in items:
+            keyboard.append([InlineKeyboardButton(text, callback_data=callback_data)])
+        
+        # ניווט בין עמודים
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"{prefix}_page_{current_page-1}"))
+            
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page+1}/{total_pages}", callback_data="ignore"))
+            
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"{prefix}_page_{current_page+1}"))
+            
+            keyboard.append(nav_row)
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="escrow_menu")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def escrow_status_display(status: str) -> str:
+        """המרת סטטוס Escrow לתצוגה"""
+        status_map = {
+            "held": "⏳ מוחזק",
+            "released": "✅ שוחרר למוכר",
+            "refunded": "↩️ הוחזר לקונה",
+            "disputed": "⚖️ במחלוקת",
+            "cancelled": "❌ בוטל"
+        }
+        return status_map.get(status, status)

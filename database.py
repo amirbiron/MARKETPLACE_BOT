@@ -37,6 +37,8 @@ class Database:
         self.support_tickets: Optional[AsyncIOMotorCollection] = None
         self.deposit_requests: Optional[AsyncIOMotorCollection] = None
         self.fraud_logs: Optional[AsyncIOMotorCollection] = None
+        self.escrow_transactions: Optional[AsyncIOMotorCollection] = None
+        self.escrow_logs: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -63,6 +65,8 @@ class Database:
             self.support_tickets = self.db["support_tickets"]
             self.deposit_requests = self.db["deposit_requests"]
             self.fraud_logs = self.db["fraud_logs"]
+            self.escrow_transactions = self.db["escrow_transactions"]
+            self.escrow_logs = self.db["escrow_logs"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -189,6 +193,21 @@ class Database:
                 IndexModel([("event_type", ASCENDING), ("created_at", DESCENDING)]),
                 IndexModel([("risk_level", ASCENDING), ("reviewed", ASCENDING), ("created_at", DESCENDING)]),
                 IndexModel([("reviewed", ASCENDING), ("created_at", ASCENDING)]),
+            ])
+
+            # Escrow transactions indexes
+            await self.escrow_transactions.create_indexes([
+                IndexModel([("order_id", ASCENDING)], unique=True),
+                IndexModel([("buyer_id", ASCENDING), ("status", ASCENDING)]),
+                IndexModel([("seller_id", ASCENDING), ("status", ASCENDING)]),
+                IndexModel([("status", ASCENDING), ("release_scheduled_at", ASCENDING)]),
+                IndexModel([("held_at", DESCENDING)]),
+            ])
+
+            # Escrow logs indexes
+            await self.escrow_logs.create_indexes([
+                IndexModel([("escrow_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("action", ASCENDING), ("created_at", DESCENDING)]),
             ])
             
             logger.info("Database indexes created successfully")
@@ -732,3 +751,13 @@ async def get_payouts_collection() -> AsyncIOMotorCollection:
 async def get_disputes_collection() -> AsyncIOMotorCollection:
     await _ensure_connected()
     return db.disputes
+
+
+async def get_escrow_transactions_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.escrow_transactions
+
+
+async def get_escrow_logs_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.escrow_logs

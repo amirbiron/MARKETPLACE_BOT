@@ -64,6 +64,13 @@ class Config:
     BANK_ACCOUNT: str = os.getenv("BANK_ACCOUNT", "")  # מספר חשבון
     BANK_OWNER: str = os.getenv("BANK_OWNER", "")  # שם בעל החשבון
     
+    # === Escrow Settings ===
+    
+    ESCROW_RELEASE_HOURS: int = 24  # שעות המתנה לשחרור אוטומטי למוכר
+    ESCROW_AUTO_RELEASE_ENABLED: bool = True  # האם לשחרר אוטומטית
+    ESCROW_DISPUTE_EXTENSION_HOURS: int = 48  # הארכה במקרה של מחלוקת
+    ESCROW_MIN_AMOUNT: float = 1.0  # מינימום סכום ל-escrow
+    
     # === Anti-Fraud Settings ===
     
     # Trust Score Thresholds
