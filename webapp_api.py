@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, static_folder='webapp')
 CORS(app)  # Enable CORS for all routes
 
+# Allow public access without Telegram auth (for browsing coupons)
+# Set WEBAPP_REQUIRE_AUTH=true to require Telegram auth for all endpoints
+REQUIRE_AUTH = os.getenv('WEBAPP_REQUIRE_AUTH', 'false').lower() == 'true'
+
 # MongoDB connection (separate from bot's connection)
 mongo_client = None
 mongo_db = None
@@ -51,6 +55,18 @@ def run_async(coro):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
     return loop.run_until_complete(coro)
+
+
+def get_current_user():
+    """Get current user from Telegram auth or return anonymous user"""
+    init_data = request.headers.get('X-Telegram-Init-Data', '')
+    auth_data = verify_telegram_data(init_data)
+    
+    if auth_data:
+        return auth_data.get('user', {})
+    
+    # Return anonymous user for public browsing
+    return {'id': 0, 'first_name': 'אורח', 'is_anonymous': True}
 
 
 # ==================== Telegram Auth ====================
@@ -332,13 +348,13 @@ def get_coupon_details(coupon_id: str):
 @app.route('/api/user/favorites', methods=['GET'])
 def get_user_favorites():
     """Get user's favorite coupons"""
-    init_data = request.headers.get('X-Telegram-Init-Data', '')
-    auth_data = verify_telegram_data(init_data)
+    user = get_current_user()
     
-    if not auth_data and not Config.DEBUG:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Require auth for user-specific data
+    if user.get('is_anonymous') and REQUIRE_AUTH:
+        return jsonify({'error': 'Unauthorized', 'message': 'יש להתחבר דרך טלגרם'}), 401
     
-    user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
+    user_id = user.get('id', 0)
     
     async def _get_favorites():
         db = get_db()
@@ -369,13 +385,13 @@ def get_user_favorites():
 @app.route('/api/user/favorites/<coupon_id>', methods=['POST', 'DELETE'])
 def toggle_favorite(coupon_id: str):
     """Add or remove coupon from favorites"""
-    init_data = request.headers.get('X-Telegram-Init-Data', '')
-    auth_data = verify_telegram_data(init_data)
+    user = get_current_user()
     
-    if not auth_data and not Config.DEBUG:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Require auth for modifying favorites
+    if user.get('is_anonymous'):
+        return jsonify({'error': 'Unauthorized', 'message': 'יש להתחבר דרך טלגרם כדי להוסיף למועדפים'}), 401
     
-    user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
+    user_id = user.get('id', 0)
     
     async def _toggle():
         db = get_db()
@@ -404,13 +420,13 @@ def toggle_favorite(coupon_id: str):
 @app.route('/api/chats')
 def get_user_chats():
     """Get user's chats"""
-    init_data = request.headers.get('X-Telegram-Init-Data', '')
-    auth_data = verify_telegram_data(init_data)
+    user = get_current_user()
     
-    if not auth_data and not Config.DEBUG:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Chats require authentication
+    if user.get('is_anonymous'):
+        return jsonify({'error': 'Unauthorized', 'message': 'יש להתחבר דרך טלגרם לצפייה בצ\'אטים'}), 401
     
-    user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
+    user_id = user.get('id', 0)
     
     async def _get_chats():
         db = get_db()
@@ -452,13 +468,13 @@ def get_user_chats():
 @app.route('/api/chats/<chat_id>/messages')
 def get_chat_messages(chat_id: str):
     """Get messages for a specific chat"""
-    init_data = request.headers.get('X-Telegram-Init-Data', '')
-    auth_data = verify_telegram_data(init_data)
+    user = get_current_user()
     
-    if not auth_data and not Config.DEBUG:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Chat messages require authentication
+    if user.get('is_anonymous'):
+        return jsonify({'error': 'Unauthorized', 'message': 'יש להתחבר דרך טלגרם לצפייה בהודעות'}), 401
     
-    user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
+    user_id = user.get('id', 0)
     page = int(request.args.get('page', 0))
     limit = int(request.args.get('limit', 50))
     
@@ -469,7 +485,7 @@ def get_chat_messages(chat_id: str):
         if not chat:
             return None, 'Chat not found'
         
-        if user_id not in [chat['buyer_id'], chat['seller_id']] and not Config.DEBUG:
+        if user_id not in [chat['buyer_id'], chat['seller_id']]:
             return None, 'Access denied'
         
         cursor = db.chat_messages.find(
@@ -519,13 +535,13 @@ def get_chat_messages(chat_id: str):
 @app.route('/api/user/balance')
 def get_user_balance():
     """Get user's balance"""
-    init_data = request.headers.get('X-Telegram-Init-Data', '')
-    auth_data = verify_telegram_data(init_data)
+    user = get_current_user()
     
-    if not auth_data and not Config.DEBUG:
-        return jsonify({'error': 'Unauthorized'}), 401
+    # Balance requires authentication
+    if user.get('is_anonymous'):
+        return jsonify({'error': 'Unauthorized', 'message': 'יש להתחבר דרך טלגרם לצפייה ביתרה'}), 401
     
-    user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
+    user_id = user.get('id', 0)
     
     async def _get_balance():
         db = get_db()
