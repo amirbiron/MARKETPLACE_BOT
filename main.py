@@ -207,6 +207,117 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
 
+async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """תפריט הגדרות"""
+    from services.user_service import UserService
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    user_id = update.effective_user.id
+    user = await UserService.get_user(user_id)
+    
+    # הצגת סטטוס נוכחי
+    notifications_status = "🔔 פעיל" if user and getattr(user, 'notifications_enabled', True) else "🔕 כבוי"
+    
+    text = f"""
+⚙️ *הגדרות*
+
+👤 *פרטי משתמש:*
+שם: {update.effective_user.first_name}
+שם משתמש: @{update.effective_user.username or 'לא מוגדר'}
+סוג חשבון: {'מוכר' if user and user.role.value in ['seller_verified', 'seller_unverified'] else 'קונה'}
+
+🔔 *התראות:* {notifications_status}
+
+📱 *פעולות זמינות:*
+"""
+    
+    keyboard = [
+        [InlineKeyboardButton("🔔 הפעל/כבה התראות", callback_data="settings_toggle_notifications")],
+        [InlineKeyboardButton("📊 הסטטיסטיקות שלי", callback_data="settings_my_stats")],
+        [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+    ]
+    
+    await update.message.reply_text(
+        text, 
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+
+
+async def settings_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בקולבקים של הגדרות"""
+    from services.user_service import UserService
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    action = query.data
+    
+    if action == "settings_toggle_notifications":
+        # החלפת מצב התראות
+        user = await UserService.get_user(user_id)
+        current_status = getattr(user, 'notifications_enabled', True) if user else True
+        new_status = not current_status
+        
+        await UserService.update_notifications_setting(user_id, new_status)
+        
+        status_text = "🔔 התראות הופעלו" if new_status else "🔕 התראות כובו"
+        await query.edit_message_text(
+            f"✅ {status_text}\n\nלחץ /start לחזרה לתפריט הראשי",
+            parse_mode="Markdown"
+        )
+    
+    elif action == "settings_my_stats":
+        # הצגת סטטיסטיקות משתמש
+        from services.order_service import OrderService
+        from utils import format_price
+        
+        user = await UserService.get_user(user_id)
+        orders = await OrderService.get_buyer_orders(user_id)
+        
+        total_purchases = len(orders) if orders else 0
+        total_spent = sum(o.price_paid for o in orders) if orders else 0
+        
+        text = f"""
+📊 *הסטטיסטיקות שלי*
+
+🛒 סה"כ רכישות: {total_purchases}
+💰 סה"כ הוצאות: {format_price(total_spent)}
+📅 חבר מאז: {user.created_at.strftime('%d/%m/%Y') if user else 'לא ידוע'}
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה להגדרות", callback_data="settings_back")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    
+    elif action == "settings_back":
+        # חזרה לתפריט הגדרות
+        user = await UserService.get_user(user_id)
+        notifications_status = "🔔 פעיל" if user and getattr(user, 'notifications_enabled', True) else "🔕 כבוי"
+        
+        text = f"""
+⚙️ *הגדרות*
+
+👤 *פרטי משתמש:*
+שם: {update.effective_user.first_name}
+שם משתמש: @{update.effective_user.username or 'לא מוגדר'}
+סוג חשבון: {'מוכר' if user and user.role.value in ['seller_verified', 'seller_unverified'] else 'קונה'}
+
+🔔 *התראות:* {notifications_status}
+
+📱 *פעולות זמינות:*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🔔 הפעל/כבה התראות", callback_data="settings_toggle_notifications")],
+            [InlineKeyboardButton("📊 הסטטיסטיקות שלי", callback_data="settings_my_stats")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+
 async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Router for ReplyKeyboard buttons (they arrive as plain text messages).
@@ -242,9 +353,17 @@ async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Admin actions
     if text == "👨‍💼 פאנל אדמין":
         return await AdminHandlers.admin_menu(update, context)
+    
+    # Settings
+    if text == "⚙️ הגדרות":
+        return await settings_menu(update, context)
+
+    # System management (admin only)
+    if text == "🔧 ניהול מערכת":
+        return await AdminHandlers.system_management_menu(update, context)
 
     # Not implemented yet
-    if text in {"⭐ המועדפים שלי", "⚙️ הגדרות", "🔧 ניהול מערכת"}:
+    if text in {"⭐ המועדפים שלי"}:
         return await update.message.reply_text("⏳ הפיצ'ר הזה עדיין בפיתוח. בקרוב!")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -334,7 +453,10 @@ def main():
     
     # Seller registration conversation
     seller_register_conv = ConversationHandler(
-        entry_points=[CommandHandler("register_seller", SellerHandlers.start_seller_registration)],
+        entry_points=[
+            CommandHandler("register_seller", SellerHandlers.start_seller_registration),
+            MessageHandler(filters.Regex(r"^🏪 הפוך למוכר$"), SellerHandlers.start_seller_registration),
+        ],
         states={
             7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],
             8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],
@@ -415,6 +537,53 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_disputes, pattern="^admin_disputes$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.add_balance_to_user, pattern="^admin_add_balance$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_system_stats, pattern="^admin_stats$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_pending_deposits, pattern="^admin_deposit_requests$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.admin_menu, pattern="^admin_menu$"))
+    
+    # System management callbacks (admin)
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_users, pattern="^sys_manage_users$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_sellers, pattern="^sys_manage_sellers$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.manage_coupons, pattern="^sys_manage_coupons$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_user_details, pattern="^sys_user_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.block_user, pattern="^sys_block_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.unblock_user, pattern="^sys_unblock_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_coupon_details, pattern="^sys_coupon_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.delete_coupon, pattern="^sys_del_coupon_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.view_logs, pattern="^sys_view_logs$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.system_settings, pattern="^sys_settings$"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.sys_back_handler, pattern="^sys_back$"))
+    
+    # Broadcast conversation
+    from handlers.admin_handlers import BROADCAST_MESSAGE, ADD_BALANCE_AMOUNT
+    broadcast_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_broadcast, pattern="^sys_broadcast$")],
+        states={
+            BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_broadcast)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(broadcast_conv)
+    
+    # Add balance to user conversation
+    add_balance_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_add_balance_to_user, pattern="^sys_addbal_")],
+        states={
+            ADD_BALANCE_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_add_balance)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(add_balance_conv)
+    
+    # Send message to user conversation
+    from handlers.admin_handlers import SEND_USER_MESSAGE
+    send_msg_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(AdminHandlers.start_send_user_message, pattern="^sys_msg_")],
+        states={
+            SEND_USER_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, AdminHandlers.process_send_user_message)]
+        },
+        fallbacks=[CommandHandler("cancel", AdminHandlers.cancel_admin_action)],
+    )
+    application.add_handler(send_msg_conv)
 
     # Auction handlers
     for handler in get_auction_handlers():
@@ -438,6 +607,9 @@ def main():
 
     # Inline "back to main menu"
     application.add_handler(CallbackQueryHandler(main_menu_command, pattern="^main_menu$"))
+    
+    # Settings callbacks
+    application.add_handler(CallbackQueryHandler(settings_callback_handler, pattern="^settings_"))
 
     # ReplyKeyboard router (menu buttons) - register late so more specific
     # ConversationHandlers (support/upload) can match first.

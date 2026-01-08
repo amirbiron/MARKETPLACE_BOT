@@ -52,6 +52,15 @@ class Config:
     # Database
     DATABASE_NAME: str = MONGODB_DB_NAME
     
+    # Payment Details - הגדרת פרטי תשלום
+    MIN_DEPOSIT_AMOUNT: int = int(os.getenv("MIN_DEPOSIT_AMOUNT", "50"))  # מינימום הטענה
+    BIT_PHONE: str = os.getenv("BIT_PHONE", "")  # מספר טלפון לביט
+    PAYBOX_LINK: str = os.getenv("PAYBOX_LINK", "")  # לינק לפייבוקס
+    BANK_NAME: str = os.getenv("BANK_NAME", "")  # שם הבנק
+    BANK_BRANCH: str = os.getenv("BANK_BRANCH", "")  # מספר סניף
+    BANK_ACCOUNT: str = os.getenv("BANK_ACCOUNT", "")  # מספר חשבון
+    BANK_OWNER: str = os.getenv("BANK_OWNER", "")  # שם בעל החשבון
+    
     @classmethod
     def validate(cls) -> bool:
         """בדיקת תקינות ההגדרות"""

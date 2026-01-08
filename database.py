@@ -35,6 +35,7 @@ class Database:
         self.transactions: Optional[AsyncIOMotorCollection] = None
         self.payment_requests: Optional[AsyncIOMotorCollection] = None
         self.support_tickets: Optional[AsyncIOMotorCollection] = None
+        self.deposit_requests: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -59,6 +60,7 @@ class Database:
             self.transactions = self.db["transactions"]
             self.payment_requests = self.db["payment_requests"]
             self.support_tickets = self.db["support_tickets"]
+            self.deposit_requests = self.db["deposit_requests"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -170,6 +172,13 @@ class Database:
             # Dispute messages indexes
             await self.dispute_messages.create_indexes([
                 IndexModel([("dispute_id", ASCENDING), ("created_at", ASCENDING)]),
+            ])
+
+            # Deposit requests indexes
+            await self.deposit_requests.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+                IndexModel([("reference_code", ASCENDING)]),
             ])
             
             logger.info("Database indexes created successfully")
