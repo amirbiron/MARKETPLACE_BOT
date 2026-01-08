@@ -88,6 +88,13 @@ class FraudRiskLevel(str, Enum):
     CRITICAL = "critical"  # קריטי
 
 
+class SellerStatus(str, Enum):
+    """סטטוסי אישור מוכר"""
+    PENDING = "pending"  # ממתין לאישור אדמין
+    APPROVED = "approved"  # אושר
+    BLOCKED = "blocked"  # חסום
+
+
 class User:
     """מודל משתמש"""
     
@@ -100,9 +107,11 @@ class User:
         balance: float = 0.0,
         frozen_balance: float = 0.0,
         business_name: Optional[str] = None,
+        commercial_name: Optional[str] = None,  # שם מסחרי - מוצג בקופונים ובצ'אטים
         phone: Optional[str] = None,
         id_number: Optional[str] = None,
         is_verified: bool = False,
+        seller_status: Optional[SellerStatus] = None,  # סטטוס אישור מוכר
         rating_average: float = 0.0,
         rating_count: int = 0,
         created_at: Optional[datetime] = None,
@@ -116,12 +125,19 @@ class User:
         self.balance = balance
         self.frozen_balance = frozen_balance
         self.business_name = business_name
+        self.commercial_name = commercial_name
         self.phone = phone
         self.id_number = id_number
         self.is_verified = is_verified
+        self.seller_status = seller_status
         self.rating_average = rating_average
         self.rating_count = rating_count
         self.created_at = created_at or datetime.utcnow()
+    
+    @property
+    def display_name(self) -> str:
+        """שם התצוגה - שם מסחרי אם קיים, אחרת שם עסק או שם פרטי"""
+        return self.commercial_name or self.business_name or self.first_name or "משתמש"
     
     def to_dict(self) -> Dict[str, Any]:
         """המרה ל-dict עבור MongoDB"""
@@ -133,9 +149,11 @@ class User:
             "balance": self.balance,
             "frozen_balance": self.frozen_balance,
             "business_name": self.business_name,
+            "commercial_name": self.commercial_name,
             "phone": self.phone,
             "id_number": self.id_number,
             "is_verified": self.is_verified,
+            "seller_status": self.seller_status.value if isinstance(self.seller_status, Enum) else self.seller_status,
             "rating_average": self.rating_average,
             "rating_count": self.rating_count,
             "created_at": self.created_at,
@@ -147,6 +165,9 @@ class User:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "User":
         """יצירה מ-dict"""
+        seller_status_val = data.get("seller_status")
+        seller_status = SellerStatus(seller_status_val) if seller_status_val else None
+        
         return cls(
             _id=data.get("_id"),
             user_id=data["user_id"],
@@ -156,9 +177,11 @@ class User:
             balance=data.get("balance", 0.0),
             frozen_balance=data.get("frozen_balance", 0.0),
             business_name=data.get("business_name"),
+            commercial_name=data.get("commercial_name"),
             phone=data.get("phone"),
             id_number=data.get("id_number"),
             is_verified=data.get("is_verified", False),
+            seller_status=seller_status,
             rating_average=data.get("rating_average", 0.0),
             rating_count=data.get("rating_count", 0),
             created_at=data.get("created_at"),

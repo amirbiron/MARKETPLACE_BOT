@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # States
 (UPLOAD_TITLE, UPLOAD_CATEGORY, UPLOAD_ORIGINAL_PRICE, UPLOAD_SALE_PRICE,
  UPLOAD_DESCRIPTION, UPLOAD_CODE, UPLOAD_EXPIRY, 
- BUSINESS_NAME, PHONE, ID_NUMBER) = range(10)
+ BUSINESS_NAME, COMMERCIAL_NAME, PHONE, ID_NUMBER) = range(11)
 
 
 class SellerHandlers:
@@ -34,7 +34,16 @@ class SellerHandlers:
         user = await UserService.get_user(user_id)
         
         if await UserService.is_seller(user_id):
-            await update.message.reply_text("✅ אתה כבר רשום כמוכר!")
+            # בדיקה אם ממתין לאישור
+            if user and getattr(user, 'seller_status', None) == 'pending':
+                await update.message.reply_text(
+                    "⏳ *ממתין לאישור*\n\n"
+                    "הבקשה שלך להירשם כמוכר כבר נשלחה וממתינה לאישור אדמינים.\n"
+                    "תקבל הודעה כשהבקשה תאושר.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text("✅ אתה כבר רשום כמוכר!")
             return ConversationHandler.END
         
         text = """
@@ -55,16 +64,39 @@ class SellerHandlers:
    • ללא סימון מיוחד
 """
         
-        keyboard = Keyboards.back_button()  # TODO: add registration type buttons
+        keyboard = Keyboards.back_button()
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
         
-        await update.message.reply_text("📝 שלח את שם העסק שלך:")
+        await update.message.reply_text("📝 שלח את שם העסק שלך (שם מלא/שם חברה):")
         return BUSINESS_NAME
     
     @staticmethod
     async def receive_business_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """קליטת שם עסק"""
         context.user_data['business_name'] = update.message.text
+        
+        await update.message.reply_text(
+            "🏷️ שלח את השם המסחרי שלך:\n\n"
+            "💡 זה השם שיוצג לקונים בקופונים, בצ'אטים ובדירוגים.\n"
+            "ניתן לשנות מאוחר יותר בעריכת פרופיל."
+        )
+        return COMMERCIAL_NAME
+    
+    @staticmethod
+    async def receive_commercial_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """קליטת שם מסחרי"""
+        commercial_name = update.message.text.strip()
+        
+        # וולידציה בסיסית
+        if len(commercial_name) < 2:
+            await update.message.reply_text("❌ שם מסחרי קצר מדי. אנא שלח שם בעל 2 תווים לפחות:")
+            return COMMERCIAL_NAME
+        
+        if len(commercial_name) > 50:
+            await update.message.reply_text("❌ שם מסחרי ארוך מדי. אנא שלח שם עד 50 תווים:")
+            return COMMERCIAL_NAME
+        
+        context.user_data['commercial_name'] = commercial_name
         
         await update.message.reply_text("📞 שלח מספר טלפון WhatsApp (לדוגמה: 0501234567):")
         return PHONE
@@ -89,7 +121,10 @@ class SellerHandlers:
     
     @staticmethod
     async def receive_id_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """קליטת ת.ז"""
+        """קליטת ת.ז ושליחת בקשה לאישור"""
+        from services.notification_service import NotificationService
+        from config import Config
+        
         if update.message.text == "/skip":
             id_number = None
         else:
@@ -98,32 +133,78 @@ class SellerHandlers:
                 await update.message.reply_text("❌ ת.ז לא תקינה. נסה שוב או /skip:")
                 return ID_NUMBER
         
-        # עדכון המשתמש
+        user = update.effective_user
+        commercial_name = context.user_data.get('commercial_name', context.user_data['business_name'])
+        
+        # עדכון המשתמש עם סטטוס ממתין לאישור
         success = await UserService.update_seller_info(
-            user_id=update.effective_user.id,
+            user_id=user.id,
             business_name=context.user_data['business_name'],
+            commercial_name=commercial_name,
             phone=context.user_data['phone'],
-            id_number=id_number
+            id_number=id_number,
+            seller_status='pending'  # סטטוס ממתין לאישור
         )
         
         if success:
             verified_str = "מאומת ✅" if id_number else "רגיל"
             commission = "3%" if id_number else "5%"
             
+            # הודעה למוכר
             text = f"""
-🎉 *הרישום הושלם!*
+🎉 *תודה על הרישום!*
 
+🏷️ שם מסחרי: {commercial_name}
 סוג מוכר: {verified_str}
 עמלה: {commission}
 
 ✅ הבקשה שלך נשלחה לאישור אדמינים.
 תקבל הודעה כשהבקשה תאושר.
-
-בינתיים, תוכל להמשיך להשתמש במערכת כקונה.
 """
             await update.message.reply_text(text, parse_mode="Markdown")
+            
+            # שליחת הודעה לאדמינים עם כפתורי אישור/דחייה
+            admin_text = f"""
+👤 *בקשה חדשה לרישום כמוכר*
+
+🆔 ID: `{user.id}`
+👤 שם: {user.first_name or 'לא זמין'}
+📛 שם משתמש: @{user.username or 'ללא'}
+
+📋 *פרטי הרישום:*
+🏢 שם עסק: {context.user_data['business_name']}
+🏷️ שם מסחרי: {commercial_name}
+📞 טלפון: {context.user_data['phone']}
+🆔 ת.ז: {'✅ סופק' if id_number else '❌ לא סופק'}
+📊 סוג: {verified_str}
+💰 עמלה: {commission}
+"""
+            
+            admin_keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ אשר מוכר", callback_data=f"approve_seller_{user.id}"),
+                    InlineKeyboardButton("❌ דחה בקשה", callback_data=f"reject_seller_{user.id}")
+                ]
+            ])
+            
+            # שליחה לכל האדמינים
+            for admin_id in Config.ADMIN_IDS:
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=admin_text,
+                        reply_markup=admin_keyboard,
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify admin {admin_id}: {e}")
         else:
             await update.message.reply_text("❌ הרישום נכשל. אנא נסה שוב מאוחר יותר.")
+        
+        # ניקוי נתוני הקונטקסט
+        context.user_data.pop('business_name', None)
+        context.user_data.pop('commercial_name', None)
+        context.user_data.pop('phone', None)
         
         return ConversationHandler.END
     

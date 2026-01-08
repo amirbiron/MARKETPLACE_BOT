@@ -88,12 +88,11 @@ class AdminHandlers:
             await query.edit_message_text("❌ אין לך הרשאות.")
             return
         
-        # TODO: יצירת מערכת pending sellers
-        # לעת עתה נציג מוכרים שצריכים אישור
+        # קבלת מוכרים ממתינים לאישור
         users = await database.get_users_collection()
         pending = await users.find({
-            "role": {"$in": ["seller_verified", "seller_unverified"]},
-            "approved": {"$ne": True}  # שדה שיש להוסיף
+            "seller_status": "pending",
+            "role": {"$in": ["seller_verified", "seller_unverified"]}
         }).to_list(10)
         
         if not pending:
@@ -103,15 +102,16 @@ class AdminHandlers:
             )
             return
         
-        text = "👥 *בקשות רישום מוכרים:*\n\n"
+        text = f"👥 *בקשות רישום מוכרים:* ({len(pending)} ממתינות)\n\n"
         
         items = []
         for seller_data in pending:
             from models import User
             seller = User.from_dict(seller_data)
             verified = "✅ מאומת" if seller.is_verified else "📝 רגיל"
+            commercial = seller.commercial_name or seller.business_name or seller.first_name
             items.append((
-                f"{seller.business_name or seller.first_name} - {verified}",
+                f"{commercial} - {verified}",
                 f"seller_req_{seller.user_id}"
             ))
         
@@ -132,17 +132,22 @@ class AdminHandlers:
             return
         
         verified_str = "מאומת ✅" if seller.is_verified else "רגיל"
+        commission = "3%" if seller.is_verified else "5%"
+        commercial = seller.commercial_name or seller.business_name or "לא צוין"
         
         text = f"""
 👤 *פרטי בקשת מוכר*
 
-שם עסק: {seller.business_name}
-טלפון: {seller.phone}
-{"ת.ז: " + seller.id_number if seller.id_number else ""}
+🏢 שם עסק: {seller.business_name or 'לא צוין'}
+🏷️ שם מסחרי: {commercial}
+📞 טלפון: {seller.phone or 'לא צוין'}
+{"🆔 ת.ז: סופק ✅" if seller.id_number else "🆔 ת.ז: לא סופק"}
 
-סוג: {verified_str}
-Telegram: @{seller.username or 'לא זמין'}
-User ID: `{seller.user_id}`
+📊 סוג מוכר: {verified_str}
+💰 עמלה: {commission}
+👤 שם: {seller.first_name or 'לא זמין'}
+📛 Telegram: @{seller.username or 'לא זמין'}
+🔑 User ID: `{seller.user_id}`
 
 בחר פעולה:
 """
@@ -157,30 +162,41 @@ User ID: `{seller.user_id}`
         await query.answer()
         
         seller_id = int(query.data.replace("approve_seller_", ""))
+        seller = await UserService.get_user(seller_id)
         
-        # עדכון סטטוס
-        users = await database.get_users_collection()
-        result = await users.update_one(
-            {"user_id": seller_id},
-            {"$set": {"approved": True}}
-        )
+        # עדכון סטטוס לאושר
+        success = await UserService.approve_seller(seller_id)
         
-        if result.modified_count > 0:
+        if success:
             # שליחת הודעה למוכר
+            commercial = seller.commercial_name or seller.business_name or "מוכר"
+            verified_str = "מאומת ✅" if seller.is_verified else "רגיל"
+            commission = "3%" if seller.is_verified else "5%"
+            
             try:
                 await context.bot.send_message(
                     seller_id,
-                    "🎉 *מזל טוב!*\n\nבקשתך לרישום כמוכר אושרה!\n"
-                    "כעת תוכל להתחיל להעלות קופונים.",
+                    f"🎉 *מזל טוב! בקשתך אושרה!*\n\n"
+                    f"🏷️ שם מסחרי: {commercial}\n"
+                    f"📊 סוג מוכר: {verified_str}\n"
+                    f"💰 עמלה: {commission}\n\n"
+                    f"✅ כעת תוכל להתחיל להעלות קופונים!\n"
+                    f"השתמש ב-/upload להעלאת קופון חדש.",
                     parse_mode="Markdown"
                 )
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Failed to notify seller {seller_id}: {e}")
             
-            await query.edit_message_text(
-                "✅ המוכר אושר בהצלחה!",
-                reply_markup=Keyboards.back_button()
-            )
+            # עדכון הודעת האדמין
+            admin_id = update.effective_user.id
+            new_text = query.message.text + f"\n\n✅ *אושר* על ידי אדמין {admin_id}"
+            try:
+                await query.edit_message_text(new_text, parse_mode="Markdown")
+            except:
+                await query.edit_message_text(
+                    f"✅ המוכר {commercial} אושר בהצלחה!",
+                    reply_markup=Keyboards.back_button()
+                )
         else:
             await query.edit_message_text("❌ האישור נכשל.")
     
@@ -191,8 +207,40 @@ User ID: `{seller.user_id}`
         await query.answer()
         
         seller_id = int(query.data.replace("reject_seller_", ""))
+        seller = await UserService.get_user(seller_id)
         
-        # מחיקת בקשה
+        # דחיית הבקשה
+        success = await UserService.reject_seller(seller_id)
+        
+        if success:
+            commercial = seller.commercial_name or seller.business_name or "מוכר"
+            
+            # שליחת הודעה למוכר
+            try:
+                await context.bot.send_message(
+                    seller_id,
+                    "❌ *הבקשה שלך נדחתה*\n\n"
+                    "לצערנו, בקשתך לרישום כמוכר לא אושרה.\n\n"
+                    "אם אתה חושב שזו טעות, פנה לתמיכה: /support",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify seller {seller_id}: {e}")
+            
+            # עדכון הודעת האדמין
+            admin_id = update.effective_user.id
+            new_text = query.message.text + f"\n\n❌ *נדחה* על ידי אדמין {admin_id}"
+            try:
+                await query.edit_message_text(new_text, parse_mode="Markdown")
+            except:
+                await query.edit_message_text(
+                    f"❌ הבקשה של {commercial} נדחתה.",
+                    reply_markup=Keyboards.back_button()
+                )
+        else:
+            await query.edit_message_text("❌ הדחייה נכשלה.")
+        
+        # Legacy code removal - keep for backward compatibility
         users = await database.get_users_collection()
         result = await users.update_one(
             {"user_id": seller_id},

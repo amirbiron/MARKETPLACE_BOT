@@ -120,7 +120,9 @@ class UserService:
         user_id: int,
         business_name: str,
         phone: str,
-        id_number: Optional[str] = None
+        id_number: Optional[str] = None,
+        commercial_name: Optional[str] = None,
+        seller_status: Optional[str] = None
     ) -> bool:
         """עדכון פרטי מוכר"""
         users = await database.get_users_collection()
@@ -129,6 +131,14 @@ class UserService:
             "business_name": business_name,
             "phone": phone,
         }
+        
+        # שם מסחרי
+        if commercial_name:
+            update_data["commercial_name"] = commercial_name
+        
+        # סטטוס אישור מוכר
+        if seller_status:
+            update_data["seller_status"] = seller_status
         
         # אם יש ת.ז, זה מוכר מאומת
         if id_number:
@@ -149,6 +159,54 @@ class UserService:
             logger.info(f"Updated seller info for user {user_id} ({verified_str})")
             return True
         return False
+    
+    @staticmethod
+    async def approve_seller(user_id: int) -> bool:
+        """אישור מוכר על ידי אדמין"""
+        users = await database.get_users_collection()
+        
+        result = await users.update_one(
+            {"user_id": user_id},
+            {"$set": {"seller_status": "approved"}}
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Approved seller {user_id}")
+            return True
+        return False
+    
+    @staticmethod
+    async def reject_seller(user_id: int) -> bool:
+        """דחיית בקשת מוכר על ידי אדמין"""
+        users = await database.get_users_collection()
+        
+        # החזרת המשתמש לסטטוס קונה רגיל
+        result = await users.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "seller_status": "blocked",
+                    "role": UserRole.BUYER.value
+                }
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Rejected seller {user_id}")
+            return True
+        return False
+    
+    @staticmethod
+    async def get_pending_sellers() -> list:
+        """קבלת רשימת מוכרים ממתינים לאישור"""
+        users = await database.get_users_collection()
+        
+        cursor = users.find({
+            "seller_status": "pending",
+            "role": {"$in": [UserRole.SELLER_VERIFIED.value, UserRole.SELLER_UNVERIFIED.value]}
+        }).sort("created_at", -1)
+        
+        return await cursor.to_list(length=None)
     
     @staticmethod
     async def update_seller_rating(seller_id: int, new_rating: int) -> bool:
