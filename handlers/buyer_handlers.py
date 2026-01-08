@@ -873,3 +873,121 @@ class BuyerHandlers:
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
+
+    # ===== היסטוריית קופונים שנמכרו (שקיפות) =====
+
+    @staticmethod
+    async def show_sold_coupons_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת היסטוריית קופונים שנמכרו - לשקיפות ובניית אמון"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+
+        page = context.user_data.get("sold_coupons_page", 0)
+        items_per_page = 10
+        max_total = 100  # מקסימום 100 עסקאות אחרונות
+
+        # קבלת הזמנות שהושלמו
+        from database import db
+        from services.coupon_service import CouponService
+
+        orders_collection = db.orders
+        cursor = orders_collection.find({
+            "status": {"$in": ["completed", "confirmed"]}
+        }).sort("created_at", -1).skip(page * items_per_page).limit(items_per_page)
+
+        orders = await cursor.to_list(length=items_per_page)
+
+        # ספירת סה"כ הזמנות
+        total_count = await orders_collection.count_documents({
+            "status": {"$in": ["completed", "confirmed"]}
+        })
+        total_count = min(total_count, max_total)
+        total_pages = (total_count + items_per_page - 1) // items_per_page
+
+        if not orders:
+            text = "📜 *קופונים שנמכרו*\n\nאין עסקאות עדיין במערכת."
+            keyboard = Keyboards.back_button()
+
+            if query:
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            return
+
+        # בניית רשימת העסקאות
+        items = []
+        transactions_text = ""
+
+        for i, order in enumerate(orders):
+            # קבלת פרטי קופון
+            coupon = await CouponService.get_coupon(order["coupon_id"])
+            coupon_title = coupon.title if coupon else "קופון"
+            category = coupon.category if coupon else "כללי"
+            original_price = coupon.original_price if coupon else 0
+
+            # קבלת פרטי מוכר
+            seller = await UserService.get_user(order["seller_id"])
+            seller_name = seller.business_name if seller and seller.business_name else "מוכר"
+
+            # שם קונה אנונימי (י***)
+            buyer = await UserService.get_user(order["buyer_id"])
+            if buyer and buyer.first_name:
+                first_char = buyer.first_name[0] if buyer.first_name else "?"
+                buyer_name = f"{first_char}***"
+            else:
+                buyer_name = "?***"
+
+            # מחיר מכירה (ללא עמלות)
+            sale_price = order.get("price_paid", 0) - order.get("buyer_commission", 0)
+
+            # תאריך
+            created_at = order.get("created_at")
+            date_str = created_at.strftime("%d/%m/%y %H:%M") if created_at else ""
+
+            # הוספת פרטי עסקה לטקסט
+            transactions_text += f"\n*{i+1 + (page * items_per_page)}.* {coupon_title}\n"
+            transactions_text += f"   👤 {buyer_name} ← {seller_name}\n"
+            transactions_text += f"   📁 {category} | 💰 ~{format_price(original_price)}~ → *{format_price(sale_price)}*\n"
+            transactions_text += f"   📅 {date_str}\n"
+
+            # יצירת item לכפתור (קצר)
+            text_item = f"📜 {coupon_title[:20]}... | {format_price(sale_price)}"
+            items.append((text_item, str(order["_id"])))
+
+        # יצירת מקלדת פגינציה בלבד (בלי כפתורי עסקאות)
+        keyboard = Keyboards.sold_coupons_pagination_keyboard(page, total_pages)
+
+        # טקסט ראשי
+        text = f"""📜 *קופונים שנמכרו לאחרונה*
+
+💡 *שקיפות מלאה* - כל העסקאות האחרונות במערכת
+📊 סה"כ: {total_count} עסקאות | עמוד {page + 1}/{total_pages}
+{transactions_text}"""
+
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def sold_coupons_pagination(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ניווט בין עמודי היסטוריית קופונים שנמכרו"""
+        query = update.callback_query
+        await query.answer()
+
+        # חילוץ מספר העמוד
+        page = int(query.data.replace("sold_page_", ""))
+        context.user_data["sold_coupons_page"] = page
+
+        # הצגת העמוד המבוקש
+        await BuyerHandlers.show_sold_coupons_history(update, context)
+
+    @staticmethod
+    async def sold_coupon_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הודעה כשלוחצים על פריט בהיסטוריה"""
+        query = update.callback_query
+        await query.answer(
+            "📜 היסטוריית עסקאות לשקיפות בלבד",
+            show_alert=False
+        )

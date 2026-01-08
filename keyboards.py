@@ -25,7 +25,8 @@ class Keyboards:
             InlineKeyboardButton("⭐ המועדפים שלי", callback_data="menu_favorites")
         ])
         keyboard.append([
-            InlineKeyboardButton("💳 ההפקדות שלי", callback_data="menu_my_deposits")
+            InlineKeyboardButton("💳 ההפקדות שלי", callback_data="menu_my_deposits"),
+            InlineKeyboardButton("📜 קופונים שנמכרו", callback_data="menu_sold_coupons")
         ])
         
         # כפתורי מוכר
@@ -292,4 +293,62 @@ class Keyboards:
             [InlineKeyboardButton("💸 הגדל הצעה", callback_data=f"auction_bid_{auction_id}")],
             [InlineKeyboardButton("👁️ צפה במכרז", callback_data=f"auction_view_{auction_id}")]
         ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def sold_coupons_keyboard(
+        items: List[Tuple[str, str]],
+        current_page: int,
+        total_pages: int
+    ) -> InlineKeyboardMarkup:
+        """מקלדת היסטוריית קופונים שנמכרו עם פגינציה"""
+        keyboard = []
+
+        # הוספת כל הפריטים (כל אחד כטקסט בלבד, ללא callback)
+        for text, _ in items:
+            # פריטים הם טקסט בלבד לשקיפות, לא קליקביליים
+            keyboard.append([InlineKeyboardButton(text, callback_data="sold_coupon_info")])
+
+        # ניווט בין עמודים
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"sold_page_{current_page-1}"))
+
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page+1}/{total_pages}", callback_data="ignore"))
+
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"sold_page_{current_page+1}"))
+
+            keyboard.append(nav_row)
+
+        # כפתור חזרה
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
+
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def sold_coupons_pagination_keyboard(
+        current_page: int,
+        total_pages: int
+    ) -> InlineKeyboardMarkup:
+        """מקלדת פגינציה בלבד להיסטוריית קופונים שנמכרו"""
+        keyboard = []
+
+        # ניווט בין עמודים
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"sold_page_{current_page-1}"))
+
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page+1}/{total_pages}", callback_data="ignore"))
+
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"sold_page_{current_page+1}"))
+
+            keyboard.append(nav_row)
+
+        # כפתור חזרה
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
+
         return InlineKeyboardMarkup(keyboard)
