@@ -128,6 +128,10 @@ class BuyerHandlers:
             user_id=update.effective_user.id,
             coupon_id=str(coupon._id)
         )
+
+        # שמירה לניווט עתידי (למשל פרופיל/דירוגים)
+        context.user_data["last_viewed_coupon_id"] = str(coupon._id)
+        context.user_data["last_viewed_seller_id"] = coupon.seller_id
         
         keyboard = Keyboards.coupon_details_keyboard(
             str(coupon._id),
@@ -137,6 +141,147 @@ class BuyerHandlers:
         )
         
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def show_seller_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת פרופיל מוכר (callback_data: seller_<seller_id>)"""
+        query = update.callback_query
+        await query.answer()
+
+        from services.review_service import ReviewService
+        from telegram import InlineKeyboardMarkup
+
+        parts = (query.data or "").split("_", 1)
+        if len(parts) != 2 or not parts[1].isdigit():
+            await query.edit_message_text("❌ מזהה מוכר לא תקין.")
+            return
+
+        seller_id = int(parts[1])
+        seller = await UserService.get_user(seller_id)
+        if not seller:
+            await query.edit_message_text("❌ המוכר לא נמצא.")
+            return
+
+        stats = await ReviewService.get_seller_rating_stats(seller_id)
+        avg = float(stats.get("average", 0.0) or 0.0)
+        count = int(stats.get("count", 0) or 0)
+        rating_str = get_star_rating(avg) if count > 0 else "⭐ ללא דירוג"
+
+        verified_badge = "✅ מאומת" if getattr(seller, "is_verified", False) or getattr(seller, "role", None).value == "seller_verified" else "⚠️ לא מאומת"
+        seller_name = getattr(seller, "display_name", None) or seller.business_name or seller.first_name or "מוכר"
+
+        # Trust score (optional; ignore failures)
+        trust_line = ""
+        try:
+            trust = await UserService.get_trust_score(seller_id)
+            trust_line = f"\n🛡️ ניקוד אמינות: {trust}/100"
+        except Exception:
+            trust_line = ""
+
+        text = (
+            f"👤 *פרופיל המוכר*\n\n"
+            f"🏷️ שם: {seller_name}\n"
+            f"{verified_badge}\n"
+            f"⭐ דירוג: {rating_str} ({count})"
+            f"{trust_line}\n\n"
+            f"💬 לשיחה עם המוכר השתמש בכפתור למטה."
+        )
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📊 צפה בדירוגים", callback_data=f"reviews_{seller_id}")],
+            [InlineKeyboardButton("💬 פתח צ'אט עם המוכר", callback_data=f"chat_seller_{seller_id}")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")],
+        ])
+
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def show_seller_reviews(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת דירוגים וביקורות של מוכר (reviews_<seller_id>[_page_<n>])"""
+        query = update.callback_query
+        await query.answer()
+
+        from services.review_service import ReviewService
+        from telegram import InlineKeyboardMarkup
+        from database import db
+
+        parts = (query.data or "").split("_")
+        # Expected: ["reviews", "<seller_id>"] or ["reviews", "<seller_id>", "page", "<n>"]
+        if len(parts) < 2 or parts[0] != "reviews" or not parts[1].isdigit():
+            await query.edit_message_text("❌ בקשה לא תקינה.")
+            return
+
+        seller_id = int(parts[1])
+        page = 0
+        if len(parts) >= 4 and parts[2] == "page" and parts[3].isdigit():
+            page = max(0, int(parts[3]))
+
+        seller = await UserService.get_user(seller_id)
+        if not seller:
+            await query.edit_message_text("❌ המוכר לא נמצא.")
+            return
+
+        total_count = await db.reviews.count_documents({"seller_id": seller_id})
+        total_pages = max(1, (total_count + Config.REVIEWS_PER_PAGE - 1) // Config.REVIEWS_PER_PAGE)
+        page = min(page, total_pages - 1)
+
+        stats = await ReviewService.get_seller_rating_stats(seller_id)
+        avg = float(stats.get("average", 0.0) or 0.0)
+        count = int(stats.get("count", 0) or 0)
+        dist = stats.get("stars_distribution", {}) or {}
+
+        reviews = await ReviewService.get_seller_reviews(seller_id, page=page)
+
+        seller_name = getattr(seller, "display_name", None) or seller.business_name or seller.first_name or "מוכר"
+        rating_display = get_star_rating(avg) if count > 0 else "⭐ ללא דירוג"
+
+        dist_lines = []
+        for stars in range(5, 0, -1):
+            dist_lines.append(f"{'⭐' * stars}: {int(dist.get(stars, 0) or 0)}")
+        dist_text = "\n".join(dist_lines)
+
+        text = (
+            f"📊 *דירוגים וביקורות*\n\n"
+            f"👤 מוכר: {seller_name}\n"
+            f"⭐ ממוצע: {rating_display} ({count})\n\n"
+            f"*התפלגות:*\n{dist_text}\n\n"
+        )
+
+        if not reviews:
+            text += "אין ביקורות להצגה עדיין."
+        else:
+            text += "*ביקורות אחרונות:*\n\n"
+            for r in reviews:
+                buyer_name = r.get("buyer_name", "קונה")
+                rating = int(r.get("rating", 0) or 0)
+                comment = (r.get("comment") or "").strip()
+                created_at = r.get("created_at")
+                date_str = created_at.strftime("%d/%m/%y") if created_at else ""
+
+                line = f"{'⭐' * max(0, min(5, rating))} {buyer_name}"
+                if date_str:
+                    line += f" ({date_str})"
+                if comment:
+                    line += f" — {comment}"
+                text += f"• {line}\n"
+
+            text += f"\nעמוד {page + 1}/{total_pages}"
+
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"reviews_{seller_id}_page_{page - 1}"))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"reviews_{seller_id}_page_{page + 1}"))
+
+        keyboard_rows = []
+        if nav_row:
+            keyboard_rows.append(nav_row)
+        keyboard_rows.extend([
+            [InlineKeyboardButton("👤 פרופיל המוכר", callback_data=f"seller_{seller_id}")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")],
+        ])
+
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard_rows), parse_mode="Markdown")
     
     @staticmethod
     async def initiate_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):

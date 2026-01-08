@@ -1147,6 +1147,9 @@ def main():
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_purchase, pattern="^confirm_buy_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.show_order_details, pattern="^order_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_order_received, pattern="^confirm_order_"))
+    # Seller profile & reviews (from coupon details)
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.show_seller_profile, pattern=r"^seller_\d+$"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.show_seller_reviews, pattern=r"^reviews_\d+(?:_page_\d+)?$"))
     
     # Favorites handlers
     application.add_handler(CallbackQueryHandler(BuyerHandlers.show_my_favorites, pattern="^my_favorites$"))
