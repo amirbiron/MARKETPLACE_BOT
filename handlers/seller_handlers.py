@@ -72,15 +72,16 @@ class SellerHandlers:
     
     @staticmethod
     async def receive_business_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """קליטת שם עסק"""
-        context.user_data['business_name'] = update.message.text
-        
-        await update.message.reply_text(
-            "🏷️ שלח את השם המסחרי שלך:\n\n"
-            "💡 זה השם שיוצג לקונים בקופונים, בצ'אטים ובדירוגים.\n"
-            "ניתן לשנות מאוחר יותר בעריכת פרופיל."
-        )
-        return COMMERCIAL_NAME
+        """קליטת שם עסק והמשך לטלפון (לפי ה-flow החדש)"""
+        business_name = (update.message.text or "").strip()
+        context.user_data["business_name"] = business_name
+
+        # לפי הדרישה: אחרי שם העסק עוברים לבקשת טלפון (ללא שלב שם מסחרי)
+        # נשמור גם commercial_name כברירת מחדל = שם העסק, כדי לשמור תאימות לתצוגות קיימות.
+        context.user_data["commercial_name"] = business_name
+
+        await update.message.reply_text("📞 שלח מספר טלפון WhatsApp (לדוגמה: 0501234567):")
+        return PHONE
     
     @staticmethod
     async def receive_commercial_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,7 +105,7 @@ class SellerHandlers:
     @staticmethod
     async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """קליטת טלפון"""
-        phone = update.message.text.strip()
+        phone = (update.message.text or "").strip().replace("-", "").replace(" ", "")
         
         # וולידציה בסיסית
         if not phone.isdigit() or len(phone) < 9:
@@ -183,7 +184,7 @@ class SellerHandlers:
             admin_keyboard = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("✅ אשר מוכר", callback_data=f"approve_seller_{user.id}"),
-                    InlineKeyboardButton("❌ דחה בקשה", callback_data=f"reject_seller_{user.id}")
+                    InlineKeyboardButton("🚫 חסום מוכר", callback_data=f"block_seller_{user.id}")
                 ]
             ])
             

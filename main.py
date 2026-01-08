@@ -37,6 +37,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Silence noisy HTTP client logs (python-telegram-bot uses httpx under the hood)
+# These logs can include the bot token inside the request URL.
+if not Config.DEBUG:
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """פקודת /start - התחלה"""
@@ -48,12 +54,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # יצירת/קבלת משתמש
     db_user = await UserService.get_user(user.id)
     if not db_user:
+        desired_role = UserRole.ADMIN if user.id in Config.ADMIN_IDS else UserRole.BUYER
         db_user = await UserService.create_user(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
-            role=UserRole.BUYER
+            role=desired_role
         )
+    else:
+        # קידום אוטומטי לאדמין לפי ADMIN_IDS (כדי שתפריט אדמין יוצג)
+        if user.id in Config.ADMIN_IDS and db_user.role != UserRole.ADMIN:
+            await UserService.set_admin(user.id)
+            db_user = await UserService.get_user(user.id) or db_user
     
     welcome_text = f"""
 🎉 *ברוך הבא ל-Marketplace Bot!*
@@ -197,12 +209,18 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     db_user = await UserService.get_user(user.id)
     if not db_user:
+        desired_role = UserRole.ADMIN if user.id in Config.ADMIN_IDS else UserRole.BUYER
         db_user = await UserService.create_user(
             user_id=user.id,
             username=user.username,
             first_name=user.first_name,
-            role=UserRole.BUYER,
+            role=desired_role,
         )
+    else:
+        # קידום אוטומטי לאדמין לפי ADMIN_IDS (כדי שתפריט אדמין יוצג גם מ-/menu)
+        if user.id in Config.ADMIN_IDS and db_user.role != UserRole.ADMIN:
+            await UserService.set_admin(user.id)
+            db_user = await UserService.get_user(user.id) or db_user
 
     keyboard = Keyboards.main_menu(db_user.role)
     text = "🏠 *תפריט ראשי*\n\nבחר פעולה מהכפתורים:"
@@ -448,10 +466,43 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
     # הפוך למוכר - התחל ישירות את תהליך הרישום
     if action == "menu_become_seller":
         await query.answer()
-        # בדיקה אם כבר מוכר
-        if await UserService.is_seller(update.effective_user.id):
+        # בדיקה סטטוס מוכר קיים / ממתין / חסום
+        user_id = update.effective_user.id
+        user = await UserService.get_user(user_id)
+
+        if user and getattr(user, "seller_status", None) == "pending":
+            await query.edit_message_text(
+                "⏳ *ממתין לאישור*\n\n"
+                "הבקשה שלך להירשם כמוכר כבר נשלחה וממתינה לאישור אדמינים.\n"
+                "תקבל הודעה כשהבקשה תאושר.",
+                parse_mode="Markdown",
+            )
+            return
+
+        if user and getattr(user, "seller_status", None) == "blocked":
+            await query.edit_message_text(
+                "🚫 *בקשת מוכר חסומה*\n\n"
+                "לא ניתן להתחיל רישום כמוכר כרגע.\n"
+                "אם אתה חושב שזו טעות, פנה לתמיכה: /support",
+                parse_mode="Markdown",
+            )
+            return
+
+        if await UserService.is_seller(user_id):
             await query.edit_message_text("✅ אתה כבר רשום כמוכר!")
             return
+
+        # ניקוי מצבי המתנה קודמים כדי למנוע ניתוב שגוי
+        for key in (
+            "awaiting_seller_registration",
+            "awaiting_commercial_name",
+            "awaiting_phone",
+            "awaiting_id_number",
+            "business_name",
+            "commercial_name",
+            "phone",
+        ):
+            context.user_data.pop(key, None)
         
         # התחלת תהליך הרישום ישירות
         text = """
@@ -690,12 +741,11 @@ async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('awaiting_seller_registration'):
         context.user_data.pop('awaiting_seller_registration', None)
         context.user_data['business_name'] = text
-        await update.message.reply_text(
-            "🏷️ שלח את השם המסחרי שלך:\n\n"
-            "💡 זה השם שיוצג לקונים בקופונים, בצ'אטים ובדירוגים.\n"
-            "ניתן לשנות מאוחר יותר בעריכת פרופיל."
-        )
-        context.user_data['awaiting_commercial_name'] = True
+        # לפי ה-flow החדש: אחרי שם העסק עוברים לבקשת מספר טלפון
+        # נשמור commercial_name כברירת מחדל = שם העסק, לתאימות לתצוגות קיימות.
+        context.user_data["commercial_name"] = text
+        await update.message.reply_text("📞 שלח מספר טלפון WhatsApp (לדוגמה: 0501234567):")
+        context.user_data['awaiting_phone'] = True
         return
     
     # מצב המתנה לשם מסחרי
@@ -1043,7 +1093,6 @@ def main():
         ],
         states={
             7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],  # BUSINESS_NAME
-            8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_commercial_name)],  # COMMERCIAL_NAME
             9: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],  # PHONE
             10: [  # ID_NUMBER
                 MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_id_number),
@@ -1131,6 +1180,7 @@ def main():
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_seller_requests, pattern="^admin_seller_requests$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_seller_request_details, pattern="^seller_req_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.approve_seller, pattern="^approve_seller_"))
+    application.add_handler(CallbackQueryHandler(AdminHandlers.block_seller, pattern="^block_seller_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.reject_seller, pattern="^reject_seller_"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_payout_requests, pattern="^admin_payout_requests$"))
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_disputes, pattern="^admin_disputes$"))
@@ -1290,6 +1340,8 @@ def main():
 
     # ReplyKeyboard router (menu buttons) - register late so more specific
     # ConversationHandlers (support/upload) can match first.
+    # Allow /skip during inline "awaiting_id_number" flow (router ignores commands by default).
+    application.add_handler(MessageHandler(filters.Regex(r"^/skip$"), menu_text_router))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_text_router))
 
     # Error handler
