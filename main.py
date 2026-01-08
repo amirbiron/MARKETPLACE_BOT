@@ -378,12 +378,57 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
     
-    # העלאת קופון (מוכרים)
+    # העלאת קופון (מוכרים) - התחל ישירות את תהליך העלאה
     if action == "menu_upload_coupon":
         await query.answer()
-        text = "📦 *העלאת קופון*\n\nלהעלאת קופון חדש, השתמש בפקודה:\n/upload"
-        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        user_id = update.effective_user.id
+        
+        # בדיקה אם מוכר
+        if not await UserService.is_seller(user_id):
+            await query.edit_message_text("❌ אתה צריך להירשם כמוכר קודם!")
+            return
+        
+        # בדיקה אם מוכר ממתין לאישור
+        user = await UserService.get_user(user_id)
+        if user and getattr(user, 'seller_status', None) == 'pending':
+            await query.edit_message_text(
+                "⏳ *ממתין לאישור*\n\n"
+                "הבקשה שלך להירשם כמוכר עדיין ממתינה לאישור אדמינים.\n"
+                "תקבל הודעה כשהבקשה תאושר.",
+                parse_mode="Markdown"
+            )
+            return
+        
+        # בדיקת הגבלה יומית למוכר לא מאומת
+        is_verified = await UserService.is_verified_seller(user_id)
+        if not is_verified:
+            import database
+            from datetime import datetime
+            coupons = await database.get_coupons_collection()
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            count = await coupons.count_documents({
+                "seller_id": user_id,
+                "created_at": {"$gte": today_start}
+            })
+            
+            if count >= Config.DAILY_COUPON_LIMIT_UNVERIFIED:
+                await query.edit_message_text(
+                    f"❌ הגעת למגבלה היומית של {Config.DAILY_COUPON_LIMIT_UNVERIFIED} קופונים.\n"
+                    f"נסה שוב מחר או הירשם כמוכר מאומת."
+                )
+                return
+        
+        # התחלת תהליך העלאה ישירות
+        text = """
+📦 *העלאת קופון חדש*
+
+בוא נתחיל! שלח את הפרטים הבאים:
+
+📝 1. כותרת הקופון (לדוגמה: ארוחה זוגית במסעדת איטלקיה)
+"""
+        await query.edit_message_text(text, parse_mode="Markdown")
+        # Set conversation state for coupon upload
+        context.user_data['awaiting_coupon_upload'] = True
         return
     
     # המכירות שלי (מוכרים)
@@ -401,12 +446,37 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer()
         return await SellerHandlers.show_seller_statistics(update, context)
     
-    # הפוך למוכר
+    # הפוך למוכר - התחל ישירות את תהליך הרישום
     if action == "menu_become_seller":
         await query.answer()
-        text = "🏪 *הפוך למוכר*\n\nלהרשמה כמוכר, השתמש בפקודה:\n/register\\_seller"
-        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        # בדיקה אם כבר מוכר
+        if await UserService.is_seller(update.effective_user.id):
+            await query.edit_message_text("✅ אתה כבר רשום כמוכר!")
+            return
+        
+        # התחלת תהליך הרישום ישירות
+        text = """
+👨‍💼 *רישום כמוכר*
+
+ברוך הבא להליך רישום המוכרים!
+
+📝 בחר סוג רישום:
+
+🔹 *מוכר מאומת* (עם ת.ז)
+   • עמלה: 3%
+   • ללא הגבלת קופונים
+   • סמל "מאומת" בפרופיל
+
+🔹 *מוכר רגיל* (ללא ת.ז)
+   • עמלה: 5%
+   • עד 10 קופונים ביום
+   • ללא סימון מיוחד
+
+📝 שלח את שם העסק שלך:
+"""
+        await query.edit_message_text(text, parse_mode="Markdown")
+        # Set conversation state for seller registration
+        context.user_data['awaiting_seller_registration'] = True
         return
     
     # פאנל אדמין
@@ -499,12 +569,27 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(rules_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
     
-    # פנייה למערכת
+    # פנייה למערכת - התחל ישירות את תהליך הפנייה
     if action == "menu_support":
         await query.answer()
-        text = "📩 *פנייה למערכת*\n\nלפתיחת פנייה חדשה, השתמש בפקודה:\n/support"
-        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        text = """
+📩 *פנייה למערכת*
+
+תוכל לשלוח לנו כל שאלה, בעיה או הצעה.
+
+כתוב את הודעתך למטה ואנו נחזור אליך בהקדם.
+
+💡 *דוגמאות:*
+• דיווח על באג
+• שאלה על המערכת
+• בקשה לתמיכה בעסקה
+• הצעה לשיפור
+
+⏳ זמן מענה ממוצע: 24 שעות
+"""
+        await query.edit_message_text(text, parse_mode="Markdown")
+        # Set conversation state for support message
+        context.user_data['awaiting_support_message'] = True
         return
 
     # היסטוריית קופונים שנמכרו
@@ -592,13 +677,262 @@ async def settings_callback_handler(update: Update, context: ContextTypes.DEFAUL
 
 async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Router for legacy ReplyKeyboard button texts.
+    Router for legacy ReplyKeyboard button texts and awaiting states from inline buttons.
     Now that we use inline buttons, redirect users to the main menu.
     """
     if not update.message or not update.message.text:
         return
 
     text = update.message.text.strip()
+    
+    # טיפול ב-awaiting states מכפתורי inline
+    
+    # מצב המתנה לרישום מוכר - קליטת שם עסק
+    if context.user_data.get('awaiting_seller_registration'):
+        context.user_data.pop('awaiting_seller_registration', None)
+        context.user_data['business_name'] = text
+        await update.message.reply_text(
+            "🏷️ שלח את השם המסחרי שלך:\n\n"
+            "💡 זה השם שיוצג לקונים בקופונים, בצ'אטים ובדירוגים.\n"
+            "ניתן לשנות מאוחר יותר בעריכת פרופיל."
+        )
+        context.user_data['awaiting_commercial_name'] = True
+        return
+    
+    # מצב המתנה לשם מסחרי
+    if context.user_data.get('awaiting_commercial_name'):
+        context.user_data.pop('awaiting_commercial_name', None)
+        
+        # וולידציה בסיסית
+        if len(text) < 2:
+            await update.message.reply_text("❌ שם מסחרי קצר מדי. אנא שלח שם בעל 2 תווים לפחות:")
+            context.user_data['awaiting_commercial_name'] = True
+            return
+        
+        if len(text) > 50:
+            await update.message.reply_text("❌ שם מסחרי ארוך מדי. אנא שלח שם עד 50 תווים:")
+            context.user_data['awaiting_commercial_name'] = True
+            return
+        
+        context.user_data['commercial_name'] = text
+        await update.message.reply_text("📞 שלח מספר טלפון WhatsApp (לדוגמה: 0501234567):")
+        context.user_data['awaiting_phone'] = True
+        return
+    
+    # מצב המתנה לטלפון
+    if context.user_data.get('awaiting_phone'):
+        context.user_data.pop('awaiting_phone', None)
+        phone = text.replace("-", "").replace(" ", "")
+        
+        # וולידציה בסיסית
+        if not phone.isdigit() or len(phone) < 9:
+            await update.message.reply_text("❌ מספר טלפון לא תקין. אנא נסה שוב:")
+            context.user_data['awaiting_phone'] = True
+            return
+        
+        context.user_data['phone'] = phone
+        await update.message.reply_text(
+            "🆔 האם תרצה להירשם כמוכר מאומת?\n\n"
+            "שלח תעודת זהות (9 ספרות) או /skip לדילוג:"
+        )
+        context.user_data['awaiting_id_number'] = True
+        return
+    
+    # מצב המתנה לת.ז
+    if context.user_data.get('awaiting_id_number'):
+        context.user_data.pop('awaiting_id_number', None)
+        # Route to the actual handler
+        return await SellerHandlers.receive_id_number(update, context)
+    
+    # מצב המתנה להעלאת קופון - קליטת כותרת
+    if context.user_data.get('awaiting_coupon_upload'):
+        context.user_data.pop('awaiting_coupon_upload', None)
+        context.user_data['coupon_title'] = text
+        
+        # הצגת קטגוריות
+        from services.coupon_service import CouponService
+        categories_text = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CouponService.CATEGORIES)])
+        
+        await update.message.reply_text(
+            f"📁 *בחר קטגוריה*\n\n{categories_text}\n\nשלח מספר (1-{len(CouponService.CATEGORIES)}):",
+            parse_mode="Markdown"
+        )
+        context.user_data['awaiting_coupon_category'] = True
+        return
+    
+    # המשך תהליך העלאת קופון - קטגוריה
+    if context.user_data.get('awaiting_coupon_category'):
+        context.user_data.pop('awaiting_coupon_category', None)
+        from services.coupon_service import CouponService
+        
+        try:
+            cat_num = int(text) - 1
+            if 0 <= cat_num < len(CouponService.CATEGORIES):
+                context.user_data['coupon_category'] = CouponService.CATEGORIES[cat_num]
+            else:
+                raise ValueError()
+        except:
+            await update.message.reply_text("❌ מספר לא תקין. נסה שוב:")
+            context.user_data['awaiting_coupon_category'] = True
+            return
+        
+        await update.message.reply_text("💰 שלח מחיר מקורי (לדוגמה: 250):")
+        context.user_data['awaiting_original_price'] = True
+        return
+    
+    # מחיר מקורי
+    if context.user_data.get('awaiting_original_price'):
+        context.user_data.pop('awaiting_original_price', None)
+        try:
+            price = float(text)
+            if price <= 0:
+                raise ValueError()
+            context.user_data['original_price'] = price
+        except:
+            await update.message.reply_text("❌ מחיר לא תקין. נסה שוב:")
+            context.user_data['awaiting_original_price'] = True
+            return
+        
+        await update.message.reply_text("💵 שלח מחיר מכירה (לדוגמה: 150):")
+        context.user_data['awaiting_sale_price'] = True
+        return
+    
+    # מחיר מכירה
+    if context.user_data.get('awaiting_sale_price'):
+        context.user_data.pop('awaiting_sale_price', None)
+        try:
+            price = float(text)
+            if price <= 0 or price >= context.user_data['original_price']:
+                await update.message.reply_text("❌ מחיר המכירה חייב להיות נמוך מהמחיר המקורי. נסה שוב:")
+                context.user_data['awaiting_sale_price'] = True
+                return
+            context.user_data['sale_price'] = price
+        except:
+            await update.message.reply_text("❌ מחיר לא תקין. נסה שוב:")
+            context.user_data['awaiting_sale_price'] = True
+            return
+        
+        await update.message.reply_text("📝 שלח תיאור (או /skip לדילוג):")
+        context.user_data['awaiting_description'] = True
+        return
+    
+    # תיאור
+    if context.user_data.get('awaiting_description'):
+        context.user_data.pop('awaiting_description', None)
+        if text == "/skip":
+            context.user_data['description'] = None
+        else:
+            context.user_data['description'] = text
+        
+        await update.message.reply_text("🔐 שלח קוד דיגיטלי/ברקוד של הקופון (או /skip):")
+        context.user_data['awaiting_digital_code'] = True
+        return
+    
+    # קוד דיגיטלי
+    if context.user_data.get('awaiting_digital_code'):
+        context.user_data.pop('awaiting_digital_code', None)
+        if text == "/skip":
+            context.user_data['digital_code'] = None
+        else:
+            context.user_data['digital_code'] = text
+        
+        await update.message.reply_text(
+            "📅 שלח תאריך תפוגה (DD/MM/YYYY) או /skip:\n"
+            "(לדוגמה: 31/12/2026)"
+        )
+        context.user_data['awaiting_expiry_date'] = True
+        return
+    
+    # תאריך תפוגה וסיום
+    if context.user_data.get('awaiting_expiry_date'):
+        context.user_data.pop('awaiting_expiry_date', None)
+        from datetime import datetime
+        from services.coupon_service import CouponService
+        from utils import format_price
+        
+        expiry_date = None
+        if text != "/skip":
+            try:
+                expiry_date = datetime.strptime(text, "%d/%m/%Y")
+            except:
+                await update.message.reply_text("❌ תאריך לא תקין. נסה שוב או /skip:")
+                context.user_data['awaiting_expiry_date'] = True
+                return
+        
+        # יצירת הקופון
+        coupon = await CouponService.create_coupon(
+            seller_id=update.effective_user.id,
+            title=context.user_data['coupon_title'],
+            category=context.user_data['coupon_category'],
+            original_price=context.user_data['original_price'],
+            sale_price=context.user_data['sale_price'],
+            description=context.user_data.get('description'),
+            digital_code=context.user_data.get('digital_code'),
+            expires_at=expiry_date
+        )
+        
+        if coupon:
+            await update.message.reply_text(
+                f"✅ *הקופון הועלה בהצלחה!*\n\n"
+                f"🎫 {coupon.title}\n"
+                f"💰 מחיר: {format_price(coupon.sale_price)}\n"
+                f"📁 קטגוריה: {coupon.category}\n\n"
+                f"הקופון זמין כעת לקנייה במערכת.",
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text("❌ ההעלאה נכשלה. אנא נסה שוב.")
+        
+        # ניקוי נתוני קופון
+        for key in ['coupon_title', 'coupon_category', 'original_price', 'sale_price', 'description', 'digital_code']:
+            context.user_data.pop(key, None)
+        return
+    
+    # מצב המתנה לפנייה למערכת
+    if context.user_data.get('awaiting_support_message'):
+        context.user_data.pop('awaiting_support_message', None)
+        
+        from database import db
+        from services.notification_service import NotificationService
+        from datetime import datetime
+        
+        user_id = update.effective_user.id
+        message = text
+        user = update.effective_user
+        
+        # שמירת הפנייה במסד נתונים
+        support_ticket = {
+            "user_id": user_id,
+            "username": user.username,
+            "first_name": user.first_name,
+            "message": message,
+            "status": "open",
+            "created_at": datetime.utcnow()
+        }
+        
+        result = await db.support_tickets.insert_one(support_ticket)
+        
+        # שליחת התראה לאדמינים
+        for admin_id in Config.ADMIN_IDS:
+            try:
+                await NotificationService.send_notification(
+                    user_id=admin_id,
+                    title="📩 פנייה חדשה למערכת",
+                    message=f"מאת: {user.first_name} (@{user.username})\n\n{message[:200]}...",
+                    notification_type="support_ticket",
+                    data={"ticket_id": str(result.inserted_id)}
+                )
+            except Exception as e:
+                logger.error(f"Failed to notify admin {admin_id}: {e}")
+        
+        await update.message.reply_text(
+            f"✅ *פנייתך נקלטה בהצלחה!*\n\n"
+            f"מספר פנייה: {str(result.inserted_id)[:8]}\n\n"
+            f"נחזור אליך בהקדם האפשרי.\n"
+            f"תודה על פנייתך! 🙏",
+            parse_mode="Markdown"
+        )
+        return
 
     # רשימת הטקסטים הישנים של כפתורי התפריט
     old_menu_texts = [
@@ -709,9 +1043,10 @@ def main():
             MessageHandler(filters.Regex(r"^🏪 הפוך למוכר$"), SellerHandlers.start_seller_registration),
         ],
         states={
-            7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],
-            8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],
-            9: [
+            7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],  # BUSINESS_NAME
+            8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_commercial_name)],  # COMMERCIAL_NAME
+            9: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],  # PHONE
+            10: [  # ID_NUMBER
                 MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_id_number),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_id_number),
             ],

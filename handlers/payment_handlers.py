@@ -33,8 +33,13 @@ class PaymentHandlers:
 
     @staticmethod
     async def my_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """צפייה ביתרה"""
+        """צפייה ביתרה - תומך גם ב-message וגם ב-callback_query"""
         user_id = update.effective_user.id
+        query = update.callback_query
+        
+        # אם זה callback query, ענה עליו קודם
+        if query:
+            await query.answer()
 
         balance, frozen = await PaymentService.get_user_balance(user_id)
 
@@ -62,11 +67,30 @@ class PaymentHandlers:
             if available >= Config.MIN_PAYOUT_AMOUNT:
                 keyboard.insert(1, [InlineKeyboardButton("💸 בקשת משיכה", callback_data="request_payout")])
 
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
+
+        # תמיכה גם ב-callback_query וגם ב-message
+        if query:
+            try:
+                await query.edit_message_text(
+                    text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                # אם לא ניתן לערוך את ההודעה, שלח הודעה חדשה
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+        elif update.message:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
     @staticmethod
     async def transaction_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
