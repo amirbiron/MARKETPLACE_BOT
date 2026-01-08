@@ -480,6 +480,11 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
+    # היסטוריית קופונים שנמכרו
+    if action == "menu_sold_coupons":
+        await query.answer()
+        return await BuyerHandlers.show_sold_coupons_history(update, context)
+
 
 async def settings_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בקולבקים של הגדרות"""
@@ -742,6 +747,10 @@ def main():
     # Notification action handlers (confirm/report from notification)
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_from_notification, pattern="^confirm_from_notif_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.report_from_notification, pattern="^report_from_notif_"))
+
+    # Sold coupons history handlers
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.sold_coupons_pagination, pattern="^sold_page_"))
+    application.add_handler(CallbackQueryHandler(BuyerHandlers.sold_coupon_info, pattern="^sold_coupon_info$"))
     # Rating conversation (rate_ -> rating_ -> comment text)
     rating_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(BuyerHandlers.start_rating, pattern="^rate_")],
