@@ -690,12 +690,11 @@ async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get('awaiting_seller_registration'):
         context.user_data.pop('awaiting_seller_registration', None)
         context.user_data['business_name'] = text
-        await update.message.reply_text(
-            "🏷️ שלח את השם המסחרי שלך:\n\n"
-            "💡 זה השם שיוצג לקונים בקופונים, בצ'אטים ובדירוגים.\n"
-            "ניתן לשנות מאוחר יותר בעריכת פרופיל."
-        )
-        context.user_data['awaiting_commercial_name'] = True
+        # לפי ה-flow החדש: אחרי שם העסק עוברים לבקשת מספר טלפון
+        # נשמור commercial_name כברירת מחדל = שם העסק, לתאימות לתצוגות קיימות.
+        context.user_data["commercial_name"] = text
+        await update.message.reply_text("📞 שלח מספר טלפון WhatsApp (לדוגמה: 0501234567):")
+        context.user_data['awaiting_phone'] = True
         return
     
     # מצב המתנה לשם מסחרי
@@ -1043,7 +1042,6 @@ def main():
         ],
         states={
             7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],  # BUSINESS_NAME
-            8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_commercial_name)],  # COMMERCIAL_NAME
             9: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],  # PHONE
             10: [  # ID_NUMBER
                 MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_id_number),
