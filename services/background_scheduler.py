@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from services.auction_service import AuctionService
 from services.favorites_service import FavoritesService
 from services.notification_service import NotificationService
+from services.fraud_detection_service import FraudDetectionService
 from database import db
 from config import Config
 import logging
@@ -41,6 +42,10 @@ class BackgroundScheduler:
             asyncio.create_task(self._notify_auction_ending()),
             asyncio.create_task(self._notify_expiring_coupons()),
             asyncio.create_task(self._notify_expiring_favorites()),
+            # Anti-Fraud Tasks
+            asyncio.create_task(self._run_fraud_detection()),
+            asyncio.create_task(self._check_duplicate_coupons()),
+            asyncio.create_task(self._update_trust_scores()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -358,6 +363,72 @@ class BackgroundScheduler:
                 logger.error(f"Error notifying expiring favorites: {e}")
 
             await asyncio.sleep(43200)  # 12 שעות
+
+    # ==================== Anti-Fraud Tasks ====================
+
+    async def _run_fraud_detection(self):
+        """הרצת בדיקות הונאה תקופתיות - כל 6 שעות"""
+        while self.running:
+            try:
+                logger.info("Running periodic fraud detection...")
+                result = await FraudDetectionService.run_periodic_checks()
+                
+                if result and not result.get("error"):
+                    logger.info(
+                        f"Fraud detection completed: "
+                        f"{result.get('checked', 0)} checked, "
+                        f"{result.get('flagged', 0)} flagged, "
+                        f"{result.get('blocked', 0)} blocked"
+                    )
+                elif result and result.get("error"):
+                    logger.error(f"Fraud detection error: {result['error']}")
+                    
+            except Exception as e:
+                logger.error(f"Error running fraud detection: {e}")
+
+            await asyncio.sleep(21600)  # 6 שעות
+
+    async def _check_duplicate_coupons(self):
+        """בדיקת קופונים כפולים - כל 12 שעות"""
+        while self.running:
+            try:
+                logger.debug("Checking for duplicate coupons...")
+                duplicates = await FraudDetectionService.check_all_duplicate_coupons()
+                
+                if duplicates > 0:
+                    logger.warning(f"Found {duplicates} duplicate coupon codes")
+                    
+            except Exception as e:
+                logger.error(f"Error checking duplicate coupons: {e}")
+
+            await asyncio.sleep(43200)  # 12 שעות
+
+    async def _update_trust_scores(self):
+        """עדכון ניקוד אמינות לכל המוכרים - כל יום"""
+        while self.running:
+            try:
+                logger.info("Updating trust scores for all sellers...")
+                
+                # מציאת כל המוכרים הפעילים
+                sellers = await db.users.find({
+                    "role": {"$in": ["seller_verified", "seller_unverified"]},
+                    "blocked": {"$ne": True}
+                }).to_list(length=None)
+                
+                updated = 0
+                for seller in sellers:
+                    try:
+                        await FraudDetectionService.calculate_trust_score(seller["user_id"])
+                        updated += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to update trust score for seller {seller['user_id']}: {e}")
+                
+                logger.info(f"Updated trust scores for {updated} sellers")
+                
+            except Exception as e:
+                logger.error(f"Error updating trust scores: {e}")
+
+            await asyncio.sleep(86400)  # יום
 
 
 # יצירת instance גלובלי

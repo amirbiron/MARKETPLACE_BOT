@@ -234,3 +234,76 @@ class UserService:
             logger.info(f"Updated notifications for user {user_id}: {enabled}")
             return True
         return False
+    
+    # === Trust Score Methods ===
+    
+    @staticmethod
+    async def get_trust_score(user_id: int) -> int:
+        """קבלת ניקוד אמינות של משתמש"""
+        from services.fraud_detection_service import FraudDetectionService
+        return await FraudDetectionService.get_trust_score(user_id)
+    
+    @staticmethod
+    async def update_trust_score(user_id: int) -> int:
+        """עדכון וחישוב מחדש של ניקוד אמינות"""
+        from services.fraud_detection_service import FraudDetectionService
+        return await FraudDetectionService.calculate_trust_score(user_id)
+    
+    @staticmethod
+    async def is_blocked(user_id: int) -> bool:
+        """בדיקה האם המשתמש חסום"""
+        users = await database.get_users_collection()
+        user = await users.find_one({"user_id": user_id})
+        
+        if user:
+            return user.get("blocked", False)
+        return False
+    
+    @staticmethod
+    async def block_user(user_id: int, reason: str = None, auto: bool = False) -> bool:
+        """חסימת משתמש"""
+        users = await database.get_users_collection()
+        
+        update_data = {
+            "blocked": True,
+            "blocked_at": database.datetime.utcnow() if hasattr(database, 'datetime') else __import__('datetime').datetime.utcnow(),
+            "auto_blocked": auto
+        }
+        if reason:
+            update_data["blocked_reason"] = reason
+        
+        result = await users.update_one(
+            {"user_id": user_id},
+            {"$set": update_data}
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Blocked user {user_id} (auto={auto}): {reason}")
+            return True
+        return False
+    
+    @staticmethod
+    async def unblock_user(user_id: int) -> bool:
+        """ביטול חסימת משתמש"""
+        users = await database.get_users_collection()
+        
+        result = await users.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {"blocked": False},
+                "$unset": {"blocked_at": "", "blocked_reason": "", "auto_blocked": ""}
+            }
+        )
+        
+        if result.modified_count > 0:
+            logger.info(f"Unblocked user {user_id}")
+            return True
+        return False
+    
+    @staticmethod
+    async def get_blocked_users(limit: int = 50) -> list:
+        """קבלת רשימת משתמשים חסומים"""
+        users = await database.get_users_collection()
+        
+        cursor = users.find({"blocked": True}).sort("blocked_at", -1).limit(limit)
+        return await cursor.to_list(length=None)
