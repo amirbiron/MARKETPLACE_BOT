@@ -6,6 +6,7 @@ import os
 import logging
 import hashlib
 import hmac
+import asyncio
 from datetime import datetime
 from functools import wraps
 from typing import Optional
@@ -14,10 +15,10 @@ from urllib.parse import parse_qsl
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from bson import ObjectId, json_util
+from motor.motor_asyncio import AsyncIOMotorClient
 import json
 
 from config import Config
-from database import db
 from models import CouponStatus
 
 # Setup logging
@@ -27,6 +28,29 @@ logger = logging.getLogger(__name__)
 # Create Flask app
 app = Flask(__name__, static_folder='webapp')
 CORS(app)  # Enable CORS for all routes
+
+# MongoDB connection (separate from bot's connection)
+mongo_client = None
+mongo_db = None
+
+
+def get_db():
+    """Get MongoDB database connection"""
+    global mongo_client, mongo_db
+    if mongo_db is None:
+        mongo_client = AsyncIOMotorClient(Config.MONGODB_URI)
+        mongo_db = mongo_client[Config.DATABASE_NAME]
+    return mongo_db
+
+
+def run_async(coro):
+    """Run async function in sync context"""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
 
 # ==================== Telegram Auth ====================
@@ -135,19 +159,34 @@ def health():
 
 
 @app.route('/api/categories')
-async def get_categories():
+def get_categories():
     """Get all coupon categories"""
-    from services.coupon_service import CouponService
+    # Categories list (same as in coupon_service.py)
+    CATEGORIES = [
+        "🍔 מסעדות ואוכל",
+        "🎬 בידור ופנאי",
+        "🛍️ קניות ואופנה",
+        "💆 יופי וספא",
+        "🏋️ ספורט וכושר",
+        "✈️ טיולים ונופש",
+        "🎓 לימודים והדרכה",
+        "🔧 שירותים ומוצרים",
+        "🎮 משחקים וטכנולוגיה",
+        "📱 מוצרי אלקטרוניקה",
+    ]
     
     return jsonify({
-        'categories': CouponService.CATEGORIES
+        'categories': CATEGORIES
     })
 
 
 @app.route('/api/coupons')
-async def get_coupons():
+def get_coupons():
     """Get coupons with optional filters"""
-    try:
+    
+    async def _get_coupons():
+        db = get_db()
+        
         # Get query parameters
         category = request.args.get('category')
         search = request.args.get('search')
@@ -167,9 +206,6 @@ async def get_coupons():
                 {'description': {'$regex': search, '$options': 'i'}}
             ]
         
-        # Get coupons
-        coupons_collection = await db.get_collection('coupons')
-        
         # Sort options
         sort_field = sort_by
         sort_dir = -1  # Descending
@@ -181,16 +217,15 @@ async def get_coupons():
             sort_field = 'sale_price'
             sort_dir = -1
         elif sort_by == 'discount':
-            sort_field = 'created_at'  # TODO: Calculate discount
+            sort_field = 'created_at'
             sort_dir = -1
         
-        cursor = coupons_collection.find(query).sort(sort_field, sort_dir).skip(page * limit).limit(limit)
+        cursor = db.coupons.find(query).sort(sort_field, sort_dir).skip(page * limit).limit(limit)
         coupons = []
         
         async for coupon in cursor:
             # Get seller info
-            users_collection = await db.get_collection('users')
-            seller = await users_collection.find_one({'user_id': coupon['seller_id']})
+            seller = await db.users.find_one({'user_id': coupon['seller_id']})
             
             # Calculate discount percentage
             discount = 0
@@ -215,38 +250,40 @@ async def get_coupons():
             })
         
         # Get total count
-        total = await coupons_collection.count_documents(query)
+        total = await db.coupons.count_documents(query)
         
-        return jsonify({
+        return {
             'coupons': coupons,
             'total': total,
             'page': page,
             'limit': limit,
             'has_more': (page + 1) * limit < total
-        })
-        
+        }
+    
+    try:
+        result = run_async(_get_coupons())
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting coupons: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/coupons/<coupon_id>')
-async def get_coupon_details(coupon_id: str):
+def get_coupon_details(coupon_id: str):
     """Get single coupon details"""
-    try:
-        coupons_collection = await db.get_collection('coupons')
-        coupon = await coupons_collection.find_one({'_id': ObjectId(coupon_id)})
+    
+    async def _get_coupon():
+        db = get_db()
+        coupon = await db.coupons.find_one({'_id': ObjectId(coupon_id)})
         
         if not coupon:
-            return jsonify({'error': 'Coupon not found'}), 404
+            return None
         
         # Get seller info
-        users_collection = await db.get_collection('users')
-        seller = await users_collection.find_one({'user_id': coupon['seller_id']})
+        seller = await db.users.find_one({'user_id': coupon['seller_id']})
         
         # Get seller reviews
-        reviews_collection = await db.get_collection('reviews')
-        reviews_cursor = reviews_collection.find({'seller_id': coupon['seller_id']}).sort('created_at', -1).limit(5)
+        reviews_cursor = db.reviews.find({'seller_id': coupon['seller_id']}).sort('created_at', -1).limit(5)
         reviews = []
         
         async for review in reviews_cursor:
@@ -263,7 +300,7 @@ async def get_coupon_details(coupon_id: str):
                 ((coupon['original_price'] - coupon['sale_price']) / coupon['original_price']) * 100
             )
         
-        return jsonify({
+        return {
             'id': str(coupon['_id']),
             'title': coupon.get('title', ''),
             'description': coupon.get('description', ''),
@@ -280,17 +317,21 @@ async def get_coupon_details(coupon_id: str):
                 'is_verified': seller.get('seller_status') == 'verified' if seller else False
             },
             'reviews': reviews
-        })
-        
+        }
+    
+    try:
+        result = run_async(_get_coupon())
+        if result is None:
+            return jsonify({'error': 'Coupon not found'}), 404
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting coupon details: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/user/favorites', methods=['GET'])
-async def get_user_favorites():
+def get_user_favorites():
     """Get user's favorite coupons"""
-    # Get user from Telegram init data
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     auth_data = verify_telegram_data(init_data)
     
@@ -299,17 +340,14 @@ async def get_user_favorites():
     
     user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
     
-    try:
-        favorites_collection = await db.get_collection('favorites')
-        coupons_collection = await db.get_collection('coupons')
-        
-        favorites = await favorites_collection.find_one({'user_id': user_id})
+    async def _get_favorites():
+        db = get_db()
+        favorites = await db.favorites.find_one({'user_id': user_id})
         favorite_ids = favorites.get('coupon_ids', []) if favorites else []
         
-        # Get coupon details
         coupons = []
         for coupon_id in favorite_ids:
-            coupon = await coupons_collection.find_one({'_id': coupon_id})
+            coupon = await db.coupons.find_one({'_id': coupon_id})
             if coupon and coupon.get('status') == CouponStatus.ACTIVE.value:
                 coupons.append({
                     'id': str(coupon['_id']),
@@ -318,15 +356,18 @@ async def get_user_favorites():
                     'original_price': coupon.get('original_price', 0),
                 })
         
-        return jsonify({'favorites': coupons})
-        
+        return {'favorites': coupons}
+    
+    try:
+        result = run_async(_get_favorites())
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting favorites: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/user/favorites/<coupon_id>', methods=['POST', 'DELETE'])
-async def toggle_favorite(coupon_id: str):
+def toggle_favorite(coupon_id: str):
     """Add or remove coupon from favorites"""
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     auth_data = verify_telegram_data(init_data)
@@ -336,33 +377,32 @@ async def toggle_favorite(coupon_id: str):
     
     user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
     
-    try:
-        favorites_collection = await db.get_collection('favorites')
-        
+    async def _toggle():
+        db = get_db()
         if request.method == 'POST':
-            # Add to favorites
-            await favorites_collection.update_one(
+            await db.favorites.update_one(
                 {'user_id': user_id},
                 {'$addToSet': {'coupon_ids': ObjectId(coupon_id)}},
                 upsert=True
             )
-            return jsonify({'success': True, 'action': 'added'})
-        
-        else:  # DELETE
-            # Remove from favorites
-            await favorites_collection.update_one(
+            return {'success': True, 'action': 'added'}
+        else:
+            await db.favorites.update_one(
                 {'user_id': user_id},
                 {'$pull': {'coupon_ids': ObjectId(coupon_id)}}
             )
-            return jsonify({'success': True, 'action': 'removed'})
-        
+            return {'success': True, 'action': 'removed'}
+    
+    try:
+        result = run_async(_toggle())
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error toggling favorite: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/chats')
-async def get_user_chats():
+def get_user_chats():
     """Get user's chats"""
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     auth_data = verify_telegram_data(init_data)
@@ -372,11 +412,9 @@ async def get_user_chats():
     
     user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
     
-    try:
-        chats_collection = await db.get_collection('chats')
-        
-        # Find chats where user is buyer or seller
-        cursor = chats_collection.find({
+    async def _get_chats():
+        db = get_db()
+        cursor = db.chats.find({
             '$or': [
                 {'buyer_id': user_id},
                 {'seller_id': user_id}
@@ -385,13 +423,9 @@ async def get_user_chats():
         
         chats = []
         async for chat in cursor:
-            # Determine if user is buyer or seller
             is_buyer = chat['buyer_id'] == user_id
             other_user_id = chat['seller_id'] if is_buyer else chat['buyer_id']
-            
-            # Get other user info
-            users_collection = await db.get_collection('users')
-            other_user = await users_collection.find_one({'user_id': other_user_id})
+            other_user = await db.users.find_one({'user_id': other_user_id})
             
             chats.append({
                 'id': str(chat['_id']),
@@ -405,15 +439,18 @@ async def get_user_chats():
                 'updated_at': chat.get('updated_at', datetime.utcnow()).isoformat()
             })
         
-        return jsonify({'chats': chats})
-        
+        return {'chats': chats}
+    
+    try:
+        result = run_async(_get_chats())
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting chats: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/chats/<chat_id>/messages')
-async def get_chat_messages(chat_id: str):
+def get_chat_messages(chat_id: str):
     """Get messages for a specific chat"""
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     auth_data = verify_telegram_data(init_data)
@@ -425,20 +462,17 @@ async def get_chat_messages(chat_id: str):
     page = int(request.args.get('page', 0))
     limit = int(request.args.get('limit', 50))
     
-    try:
-        chats_collection = await db.get_collection('chats')
-        messages_collection = await db.get_collection('chat_messages')
+    async def _get_messages():
+        db = get_db()
+        chat = await db.chats.find_one({'_id': ObjectId(chat_id)})
         
-        # Verify user has access to chat
-        chat = await chats_collection.find_one({'_id': ObjectId(chat_id)})
         if not chat:
-            return jsonify({'error': 'Chat not found'}), 404
+            return None, 'Chat not found'
         
         if user_id not in [chat['buyer_id'], chat['seller_id']] and not Config.DEBUG:
-            return jsonify({'error': 'Access denied'}), 403
+            return None, 'Access denied'
         
-        # Get messages
-        cursor = messages_collection.find(
+        cursor = db.chat_messages.find(
             {'chat_id': ObjectId(chat_id)}
         ).sort('created_at', -1).skip(page * limit).limit(limit)
         
@@ -461,25 +495,29 @@ async def get_chat_messages(chat_id: str):
                 'created_at': msg.get('created_at', datetime.utcnow()).isoformat()
             })
         
-        # Reverse to get chronological order
         messages.reverse()
         
-        return jsonify({
+        return {
             'messages': messages,
             'chat': {
                 'id': str(chat['_id']),
                 'buyer_id': chat['buyer_id'],
                 'seller_id': chat['seller_id']
             }
-        })
-        
+        }, None
+    
+    try:
+        result, error = run_async(_get_messages())
+        if error:
+            return jsonify({'error': error}), 404 if error == 'Chat not found' else 403
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting chat messages: {e}")
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/user/balance')
-async def get_user_balance():
+def get_user_balance():
     """Get user's balance"""
     init_data = request.headers.get('X-Telegram-Init-Data', '')
     auth_data = verify_telegram_data(init_data)
@@ -489,26 +527,29 @@ async def get_user_balance():
     
     user_id = auth_data.get('user', {}).get('id', 0) if auth_data else 0
     
-    try:
-        users_collection = await db.get_collection('users')
-        user = await users_collection.find_one({'user_id': user_id})
+    async def _get_balance():
+        db = get_db()
+        user = await db.users.find_one({'user_id': user_id})
         
         if not user:
-            return jsonify({
+            return {
                 'balance': 0,
                 'frozen_balance': 0,
                 'available': 0
-            })
+            }
         
         balance = user.get('balance', 0)
         frozen = user.get('frozen_balance', 0)
         
-        return jsonify({
+        return {
             'balance': balance,
             'frozen_balance': frozen,
             'available': balance - frozen
-        })
-        
+        }
+    
+    try:
+        result = run_async(_get_balance())
+        return jsonify(result)
     except Exception as e:
         logger.error(f"Error getting balance: {e}")
         return jsonify({'error': str(e)}), 500
@@ -516,17 +557,7 @@ async def get_user_balance():
 
 # ==================== Main ====================
 
-def run_webapp_server():
-    """Run the webapp API server"""
+if __name__ == '__main__':
     port = int(os.getenv('WEBAPP_PORT', 8080))
-    
-    # Connect to database
-    import asyncio
-    asyncio.get_event_loop().run_until_complete(db.connect())
-    
     logger.info(f"Starting Web App API server on port {port}")
     app.run(host='0.0.0.0', port=port, debug=Config.DEBUG)
-
-
-if __name__ == '__main__':
-    run_webapp_server()
