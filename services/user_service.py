@@ -12,16 +12,124 @@ logger = logging.getLogger(__name__)
 
 class UserService:
     """שירות לניהול משתמשים"""
+
+    @staticmethod
+    async def _find_user_doc(user_id: int) -> Optional[dict]:
+        """
+        מציאת מסמך משתמש בצורה תואמת לאחור.
+
+        בקוד הנוכחי המפתח הראשי הוא `user_id` (Telegram ID).
+        בגרסאות ישנות ייתכן שהמפתח נשמר בשדה `telegram_id`.
+        """
+        users = await database.get_users_collection()
+        user_data = await users.find_one({"user_id": user_id})
+        if user_data:
+            return user_data
+        # Backward compatibility (legacy schema)
+        return await users.find_one({"telegram_id": user_id})
+
+    @staticmethod
+    def _user_selector(user_id: int) -> dict:
+        """Selector that matches both new and legacy schemas."""
+        return {"$or": [{"user_id": user_id}, {"telegram_id": user_id}]}
+
+    @staticmethod
+    def _normalize_role_from_doc(doc: Optional[dict]) -> UserRole:
+        """Normalize any legacy role strings to current UserRole."""
+        if not doc:
+            return UserRole.BUYER
+
+        role_val = doc.get("role", UserRole.BUYER.value)
+        try:
+            return UserRole(role_val)
+        except Exception:
+            # legacy mapping
+            if role_val == "seller":
+                is_verified = bool(doc.get("is_verified")) or bool(doc.get("verified")) or bool(doc.get("id_number"))
+                return UserRole.SELLER_VERIFIED if is_verified else UserRole.SELLER_UNVERIFIED
+            if str(role_val).lower() in {"admin", "administrator"}:
+                return UserRole.ADMIN
+            return UserRole.BUYER
+
+    @staticmethod
+    def _role_priority(role: UserRole) -> int:
+        """Higher means more privileges/should win in merges."""
+        return {
+            UserRole.BUYER: 0,
+            UserRole.SELLER_UNVERIFIED: 10,
+            UserRole.SELLER_VERIFIED: 20,
+            UserRole.ADMIN: 100,
+        }.get(role, 0)
     
     @staticmethod
     async def get_user(user_id: int) -> Optional[User]:
         """קבלת משתמש לפי ID"""
         users = await database.get_users_collection()
-        user_data = await users.find_one({"user_id": user_id})
-        
-        if user_data:
-            return User.from_dict(user_data)
-        return None
+        primary = await users.find_one({"user_id": user_id})
+        legacy = await users.find_one({"telegram_id": user_id})
+
+        if not primary and not legacy:
+            return None
+
+        # If we only have legacy, try to migrate it to the primary key.
+        if not primary and legacy:
+            legacy_updates = {"user_id": user_id}
+            if "verified" in legacy and "is_verified" not in legacy:
+                legacy_updates["is_verified"] = bool(legacy.get("verified"))
+            if legacy.get("role") == "seller":
+                norm = UserService._normalize_role_from_doc(legacy)
+                legacy_updates["role"] = norm.value
+            try:
+                await users.update_one({"_id": legacy["_id"]}, {"$set": legacy_updates})
+            except Exception:
+                pass
+            primary = await users.find_one({"user_id": user_id})
+
+        # If we have both (duplicate docs), reconcile so user doesn't "fall back" to buyer.
+        if primary and legacy and legacy.get("_id") != primary.get("_id"):
+            updates: dict = {}
+
+            primary_role = UserService._normalize_role_from_doc(primary)
+            legacy_role = UserService._normalize_role_from_doc(legacy)
+
+            # Ensure higher privilege role wins (e.g. seller shouldn't become buyer).
+            if UserService._role_priority(legacy_role) > UserService._role_priority(primary_role):
+                updates["role"] = legacy_role.value
+
+            # Verification should not be lost if either doc indicates it.
+            primary_verified = bool(primary.get("is_verified")) or bool(primary.get("verified")) or bool(primary.get("id_number"))
+            legacy_verified = bool(legacy.get("is_verified")) or bool(legacy.get("verified")) or bool(legacy.get("id_number"))
+            if legacy_verified and not primary_verified:
+                updates["is_verified"] = True
+                if legacy.get("id_number") and not primary.get("id_number"):
+                    updates["id_number"] = legacy.get("id_number")
+                # If we became verified, ensure role reflects it (unless admin).
+                merged_role = UserService._normalize_role_from_doc({**primary, **updates})
+                if merged_role != UserRole.ADMIN and merged_role == UserRole.SELLER_UNVERIFIED:
+                    updates["role"] = UserRole.SELLER_VERIFIED.value
+
+            # Copy seller identity fields if missing in primary (helps menus/profile)
+            for field in ("business_name", "commercial_name", "phone", "seller_status"):
+                if not primary.get(field) and legacy.get(field):
+                    updates[field] = legacy.get(field)
+
+            # Keep the higher rating count if legacy has more
+            try:
+                if int(legacy.get("rating_count", 0) or 0) > int(primary.get("rating_count", 0) or 0):
+                    updates["rating_count"] = legacy.get("rating_count", 0)
+                    updates["rating_average"] = legacy.get("rating_average", primary.get("rating_average", 0.0))
+            except Exception:
+                pass
+
+            if updates:
+                try:
+                    await users.update_one({"_id": primary["_id"]}, {"$set": updates})
+                    primary = await users.find_one({"_id": primary["_id"]}) or primary
+                except Exception:
+                    pass
+
+        user_data = primary or legacy
+        return User.from_dict(user_data)
     
     @staticmethod
     async def create_user(
@@ -33,10 +141,17 @@ class UserService:
         """יצירת משתמש חדש"""
         users = await database.get_users_collection()
         
-        # בדיקה אם המשתמש כבר קיים
-        existing = await users.find_one({"user_id": user_id})
+        # בדיקה אם המשתמש כבר קיים (תואם לאחור גם ל-telegram_id)
+        existing = await UserService._find_user_doc(user_id)
         if existing:
             logger.info(f"User {user_id} already exists")
+            # Best-effort migrate legacy telegram_id->user_id
+            if existing.get("telegram_id") == user_id and not existing.get("user_id"):
+                try:
+                    await users.update_one({"_id": existing["_id"]}, {"$set": {"user_id": user_id}})
+                    existing = await users.find_one({"user_id": user_id}) or existing
+                except Exception:
+                    pass
             return User.from_dict(existing)
         
         user = User(
@@ -58,7 +173,7 @@ class UserService:
         users = await database.get_users_collection()
         
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {"$inc": {"balance": amount}}
         )
         
@@ -71,7 +186,7 @@ class UserService:
     async def freeze_balance(user_id: int, amount: float) -> bool:
         """הקפאת יתרה (למכרזים)"""
         users = await database.get_users_collection()
-        user_data = await users.find_one({"user_id": user_id})
+        user_data = await users.find_one(UserService._user_selector(user_id))
         
         if not user_data:
             return False
@@ -83,7 +198,7 @@ class UserService:
             return False
         
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {"$inc": {"frozen_balance": amount}}
         )
         
@@ -98,7 +213,7 @@ class UserService:
         users = await database.get_users_collection()
         
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {"$inc": {"frozen_balance": -amount}}
         )
         
@@ -126,6 +241,9 @@ class UserService:
     ) -> bool:
         """עדכון פרטי מוכר"""
         users = await database.get_users_collection()
+
+        # Load current user to avoid accidentally downgrading verified sellers
+        current = await UserService._find_user_doc(user_id)
         
         update_data = {
             "business_name": business_name,
@@ -140,19 +258,26 @@ class UserService:
         if seller_status:
             update_data["seller_status"] = seller_status
         
-        # אם יש ת.ז, זה מוכר מאומת
+        # קביעת סטטוס אימות בצורה שלא "תדרוס" מוכר מאומת קיימת:
+        # - אם נשלחה ת.ז כעת -> מאומת
+        # - אחרת, אם קיימת ת.ז/אימות כבר במסד -> נשמור מאומת
+        # - אחרת -> לא מאומת
+        has_existing_id = bool(current.get("id_number")) if current else False
+        has_existing_verified = bool(current.get("is_verified")) if current else False
+
         if id_number:
             update_data["id_number"] = id_number
-            update_data["role"] = UserRole.SELLER_VERIFIED.value
             update_data["is_verified"] = True
+            update_data["role"] = UserRole.SELLER_VERIFIED.value
+        elif has_existing_id or has_existing_verified:
+            # Preserve verified seller state if already verified
+            update_data["is_verified"] = True
+            update_data["role"] = UserRole.SELLER_VERIFIED.value
         else:
-            update_data["role"] = UserRole.SELLER_UNVERIFIED.value
             update_data["is_verified"] = False
+            update_data["role"] = UserRole.SELLER_UNVERIFIED.value
         
-        result = await users.update_one(
-            {"user_id": user_id},
-            {"$set": update_data}
-        )
+        result = await users.update_one(UserService._user_selector(user_id), {"$set": update_data})
         
         if result.modified_count > 0:
             verified_str = "verified" if id_number else "unverified"
@@ -165,7 +290,7 @@ class UserService:
         """אישור מוכר על ידי אדמין"""
         users = await database.get_users_collection()
 
-        user_data = await users.find_one({"user_id": user_id})
+        user_data = await users.find_one(UserService._user_selector(user_id))
         if not user_data:
             return False
 
@@ -178,7 +303,7 @@ class UserService:
         if not is_admin and current_role not in [UserRole.SELLER_VERIFIED.value, UserRole.SELLER_UNVERIFIED.value]:
             update_set["role"] = UserRole.SELLER_VERIFIED.value if is_verified else UserRole.SELLER_UNVERIFIED.value
 
-        result = await users.update_one({"user_id": user_id}, {"$set": update_set})
+        result = await users.update_one(UserService._user_selector(user_id), {"$set": update_set})
 
         if result.matched_count == 0:
             return False
@@ -203,7 +328,7 @@ class UserService:
         
         # החזרת המשתמש לסטטוס קונה רגיל
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {
                 "$set": {
                     "seller_status": "blocked",
@@ -235,7 +360,7 @@ class UserService:
     async def update_seller_rating(seller_id: int, new_rating: int) -> bool:
         """עדכון דירוג מוכר"""
         users = await database.get_users_collection()
-        user_data = await users.find_one({"user_id": seller_id})
+        user_data = await users.find_one(UserService._user_selector(seller_id))
         
         if not user_data:
             return False
@@ -248,7 +373,7 @@ class UserService:
         new_avg = ((current_avg * current_count) + new_rating) / new_count
         
         result = await users.update_one(
-            {"user_id": seller_id},
+            UserService._user_selector(seller_id),
             {
                 "$set": {
                     "rating_average": round(new_avg, 2),
@@ -292,7 +417,7 @@ class UserService:
         users = await database.get_users_collection()
         
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {"$set": {"role": UserRole.ADMIN.value}}
         )
         
@@ -307,7 +432,7 @@ class UserService:
         users = await database.get_users_collection()
         
         result = await users.update_one(
-            {"user_id": user_id},
+            UserService._user_selector(user_id),
             {"$set": {"notifications_enabled": enabled}}
         )
         

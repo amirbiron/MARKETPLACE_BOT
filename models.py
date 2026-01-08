@@ -165,22 +165,40 @@ class User:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "User":
         """יצירה מ-dict"""
+        # Be resilient to legacy/unknown values (backward compatibility).
         seller_status_val = data.get("seller_status")
-        seller_status = SellerStatus(seller_status_val) if seller_status_val else None
+        try:
+            seller_status = SellerStatus(seller_status_val) if seller_status_val else None
+        except Exception:
+            seller_status = None
+
+        role_val = data.get("role", "buyer")
+        try:
+            role = UserRole(role_val)
+        except Exception:
+            # Legacy role mapping
+            if role_val == "seller":
+                is_verified = bool(data.get("is_verified")) or bool(data.get("verified")) or bool(data.get("id_number"))
+                role = UserRole.SELLER_VERIFIED if is_verified else UserRole.SELLER_UNVERIFIED
+            elif str(role_val).lower() in {"admin", "administrator"}:
+                role = UserRole.ADMIN
+            else:
+                role = UserRole.BUYER
         
         return cls(
             _id=data.get("_id"),
-            user_id=data["user_id"],
+            # Some legacy docs may still store the Telegram ID under `telegram_id`.
+            user_id=data.get("user_id") or data.get("telegram_id"),
             username=data.get("username"),
             first_name=data.get("first_name"),
-            role=UserRole(data.get("role", "buyer")),
+            role=role,
             balance=data.get("balance", 0.0),
             frozen_balance=data.get("frozen_balance", 0.0),
             business_name=data.get("business_name"),
             commercial_name=data.get("commercial_name"),
             phone=data.get("phone"),
             id_number=data.get("id_number"),
-            is_verified=data.get("is_verified", False),
+            is_verified=data.get("is_verified", data.get("verified", False)),
             seller_status=seller_status,
             rating_average=data.get("rating_average", 0.0),
             rating_count=data.get("rating_count", 0),
