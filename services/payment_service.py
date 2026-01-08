@@ -33,7 +33,7 @@ class PaymentService:
 
             # עדכון יתרה
             await db.users.update_one(
-                {"telegram_id": user_id},
+                {"user_id": user_id},
                 {
                     "$inc": {"balance": amount},
                     "$set": {"updated_at": datetime.utcnow()}
@@ -83,7 +83,7 @@ class PaymentService:
             None אם הצליח, או הודעת שגיאה
         """
         try:
-            buyer = await db.users.find_one({"telegram_id": buyer_id})
+            buyer = await db.users.find_one({"user_id": buyer_id})
 
             if not buyer:
                 return "❌ קונה לא נמצא"
@@ -93,7 +93,7 @@ class PaymentService:
 
             # ניכוי מהקונה
             await db.users.update_one(
-                {"telegram_id": buyer_id},
+                {"user_id": buyer_id},
                 {
                     "$inc": {"balance": -amount},
                     "$set": {"updated_at": datetime.utcnow()}
@@ -102,7 +102,7 @@ class PaymentService:
 
             # הוספה למוכר
             await db.users.update_one(
-                {"telegram_id": seller_id},
+                {"user_id": seller_id},
                 {
                     "$inc": {"balance": amount},
                     "$set": {"updated_at": datetime.utcnow()}
@@ -148,7 +148,7 @@ class PaymentService:
             None אם הצליח, או הודעת שגיאה
         """
         try:
-            user = await db.users.find_one({"telegram_id": user_id})
+            user = await db.users.find_one({"user_id": user_id})
 
             if not user:
                 return "❌ משתמש לא נמצא"
@@ -158,7 +158,7 @@ class PaymentService:
 
             # העברה מיתרה רגילה ליתרה קפואה
             await db.users.update_one(
-                {"telegram_id": user_id},
+                {"user_id": user_id},
                 {
                     "$inc": {
                         "balance": -amount,
@@ -184,7 +184,7 @@ class PaymentService:
             None אם הצליח, או הודעת שגיאה
         """
         try:
-            user = await db.users.find_one({"telegram_id": user_id})
+            user = await db.users.find_one({"user_id": user_id})
 
             if not user:
                 return "❌ משתמש לא נמצא"
@@ -194,7 +194,7 @@ class PaymentService:
 
             # החזרה מיתרה קפואה ליתרה רגילה
             await db.users.update_one(
-                {"telegram_id": user_id},
+                {"user_id": user_id},
                 {
                     "$inc": {
                         "balance": amount,
@@ -220,7 +220,7 @@ class PaymentService:
             Tuple[balance, frozen_balance]
         """
         try:
-            user = await db.users.find_one({"telegram_id": user_id})
+            user = await db.users.find_one({"user_id": user_id})
 
             if not user:
                 return 0.0, 0.0
@@ -349,7 +349,7 @@ class PaymentService:
 
             # הוספת יתרה
             await db.users.update_one(
-                {"telegram_id": user_id},
+                {"user_id": user_id},
                 {
                     "$inc": {"balance": amount},
                     "$set": {"updated_at": datetime.utcnow()}

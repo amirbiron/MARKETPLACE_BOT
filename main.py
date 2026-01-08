@@ -182,6 +182,71 @@ async def rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(rules_text, parse_mode="Markdown")
 
 
+async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """הצגת תפריט ראשי (לשימוש גם מכפתורי Inline 'main_menu')"""
+    from services.user_service import UserService
+    from models import UserRole
+
+    user = update.effective_user
+    db_user = await UserService.get_user(user.id)
+    if not db_user:
+        db_user = await UserService.create_user(
+            user_id=user.id,
+            username=user.username,
+            first_name=user.first_name,
+            role=UserRole.BUYER,
+        )
+
+    keyboard = Keyboards.main_menu(db_user.role)
+    text = "🏠 *תפריט ראשי*\n\nבחר פעולה:"
+
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+
+async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Router for ReplyKeyboard buttons (they arrive as plain text messages).
+    Without this, pressing menu buttons does nothing unless the user types commands.
+    """
+    if not update.message or not update.message.text:
+        return
+
+    text = update.message.text.strip()
+
+    # Buyer actions
+    if text == "🛒 קניית קופונים":
+        return await BuyerHandlers.browse_categories(update, context)
+    if text == "📜 ההזמנות שלי":
+        return await BuyerHandlers.show_my_orders(update, context)
+    if text == "💰 יתרה והטענה":
+        from handlers.payment_handlers import PaymentHandlers
+        return await PaymentHandlers.my_balance(update, context)
+    if text == "📋 תקנון":
+        return await rules_command(update, context)
+    if text == "💬 הצ'אטים שלי":
+        from handlers.chat_handlers import ChatHandlers
+        return await ChatHandlers.my_chats(update, context)
+
+    # Seller actions
+    if text == "📊 המכירות שלי":
+        return await SellerHandlers.show_my_sales(update, context)
+    if text == "📈 סטטיסטיקות":
+        return await SellerHandlers.show_seller_statistics(update, context)
+    if text == "💸 משיכת כספים":
+        return await SellerHandlers.request_withdrawal(update, context)
+
+    # Admin actions
+    if text == "👨‍💼 פאנל אדמין":
+        return await AdminHandlers.admin_menu(update, context)
+
+    # Not implemented yet
+    if text in {"⭐ המועדפים שלי", "⚙️ הגדרות", "🔧 ניהול מערכת"}:
+        return await update.message.reply_text("⏳ הפיצ'ר הזה עדיין בפיתוח. בקרוב!")
+
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בשגיאות"""
     logger.error(f"Exception while handling an update: {context.error}", exc_info=context.error)
@@ -242,16 +307,76 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("balance", balance_command))
     application.add_handler(CommandHandler("rules", rules_command))
+    application.add_handler(CommandHandler("menu", main_menu_command))
     
     # Buyer handlers
     application.add_handler(CommandHandler("buy", BuyerHandlers.browse_categories))
     application.add_handler(CommandHandler("myorders", BuyerHandlers.show_my_orders))
-    application.add_handler(CommandHandler("search", BuyerHandlers.start_search))
     application.add_handler(CommandHandler("filters", BuyerHandlers.show_search_filters))
     application.add_handler(CommandHandler("hot_coupons", BuyerHandlers.show_hot_coupons))
+
+    # Buyer search conversation (/search or inline "search_free")
+    async def _cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return ConversationHandler.END
+
+    search_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("search", BuyerHandlers.start_search),
+            CallbackQueryHandler(BuyerHandlers.start_search, pattern="^search_free$"),
+        ],
+        states={
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, BuyerHandlers.process_search_query)],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(search_conv)
     
-    # Seller handlers
-    application.add_handler(CommandHandler("upload", SellerHandlers.start_coupon_upload))
+    # Seller registration conversation
+    seller_register_conv = ConversationHandler(
+        entry_points=[CommandHandler("register_seller", SellerHandlers.start_seller_registration)],
+        states={
+            7: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_business_name)],
+            8: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_phone)],
+            9: [
+                MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_id_number),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_id_number),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(seller_register_conv)
+
+    # Seller coupon upload conversation
+    coupon_upload_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("upload", SellerHandlers.start_coupon_upload),
+            MessageHandler(filters.Regex(r"^📦 העלאת קופון$"), SellerHandlers.start_coupon_upload),
+        ],
+        states={
+            0: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_coupon_title)],
+            1: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_coupon_category)],
+            2: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_original_price)],
+            3: [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_sale_price)],
+            4: [
+                MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_description),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_description),
+            ],
+            5: [
+                MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_digital_code),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_digital_code),
+            ],
+            6: [
+                MessageHandler(filters.Regex(r"^/skip$"), SellerHandlers.receive_expiry_date),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.receive_expiry_date),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(coupon_upload_conv)
+
     application.add_handler(CommandHandler("mysales", SellerHandlers.show_my_sales))
     application.add_handler(CommandHandler("stats", SellerHandlers.show_seller_statistics))
     application.add_handler(CommandHandler("withdraw", SellerHandlers.request_withdrawal))
@@ -266,8 +391,20 @@ def main():
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_purchase, pattern="^confirm_buy_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.show_order_details, pattern="^order_"))
     application.add_handler(CallbackQueryHandler(BuyerHandlers.confirm_order_received, pattern="^confirm_order_"))
-    application.add_handler(CallbackQueryHandler(BuyerHandlers.start_rating, pattern="^rate_"))
-    application.add_handler(CallbackQueryHandler(BuyerHandlers.submit_rating_score, pattern="^rating_"))
+    # Rating conversation (rate_ -> rating_ -> comment text)
+    rating_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(BuyerHandlers.start_rating, pattern="^rate_")],
+        states={
+            3: [CallbackQueryHandler(BuyerHandlers.submit_rating_score, pattern="^rating_")],
+            2: [
+                MessageHandler(filters.Regex(r"^/skip$"), BuyerHandlers.process_rating_comment),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, BuyerHandlers.process_rating_comment),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(rating_conv)
     
     # Admin callbacks
     application.add_handler(CallbackQueryHandler(AdminHandlers.show_seller_requests, pattern="^admin_seller_requests$"))
@@ -298,6 +435,13 @@ def main():
     # Support handlers
     for handler in get_support_handlers():
         application.add_handler(handler)
+
+    # Inline "back to main menu"
+    application.add_handler(CallbackQueryHandler(main_menu_command, pattern="^main_menu$"))
+
+    # ReplyKeyboard router (menu buttons) - register late so more specific
+    # ConversationHandlers (support/upload) can match first.
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_text_router))
 
     # Error handler
     application.add_error_handler(error_handler)

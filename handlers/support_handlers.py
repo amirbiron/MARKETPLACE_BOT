@@ -189,7 +189,8 @@ def get_support_handlers():
     # Conversation handler לפנייה חדשה
     support_conv = ConversationHandler(
         entry_points=[
-            CommandHandler("support", SupportHandlers.support_command)
+            CommandHandler("support", SupportHandlers.support_command),
+            MessageHandler(filters.Regex(r"^📩 פנייה למערכת$"), SupportHandlers.support_command),
         ],
         states={
             WAITING_FOR_SUPPORT_MESSAGE: [

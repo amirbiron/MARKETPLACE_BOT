@@ -10,6 +10,7 @@ from services.order_service import OrderService
 from keyboards import Keyboards
 from utils import format_price, format_datetime
 from config import Config
+import database
 import logging
 
 logger = logging.getLogger(__name__)

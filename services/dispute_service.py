@@ -120,7 +120,7 @@ class DisputeService:
             # בדיקה שהשולח קשור למחלוקת
             if sender_id not in [dispute["buyer_id"], dispute["seller_id"]]:
                 # בדיקה אם הוא אדמין
-                user = await db.users.find_one({"telegram_id": sender_id})
+                user = await db.users.find_one({"user_id": sender_id})
                 if not user or user.get("role") != "admin":
                     return "❌ אין לך הרשאה למחלוקת זו"
 
@@ -157,7 +157,7 @@ class DisputeService:
 
             # הוספת שמות משתמשים
             for msg in messages:
-                user = await db.users.find_one({"telegram_id": msg["sender_id"]})
+                user = await db.users.find_one({"user_id": msg["sender_id"]})
                 if user:
                     msg["sender_name"] = user.get("first_name") or user.get("business_name", "משתמש")
                 else:
@@ -219,13 +219,13 @@ class DisputeService:
 
                 # החזרת כסף לקונה
                 await db.users.update_one(
-                    {"telegram_id": dispute["buyer_id"]},
+                    {"user_id": dispute["buyer_id"]},
                     {"$inc": {"balance": amount}}
                 )
 
                 # ניכוי מהמוכר
                 await db.users.update_one(
-                    {"telegram_id": dispute["seller_id"]},
+                    {"user_id": dispute["seller_id"]},
                     {"$inc": {"balance": -amount}}
                 )
 
@@ -304,11 +304,11 @@ class DisputeService:
                     if coupon:
                         dispute["coupon"] = coupon
 
-                buyer = await db.users.find_one({"telegram_id": dispute["buyer_id"]})
+                buyer = await db.users.find_one({"user_id": dispute["buyer_id"]})
                 if buyer:
                     dispute["buyer_name"] = buyer.get("first_name", "קונה")
 
-                seller = await db.users.find_one({"telegram_id": dispute["seller_id"]})
+                seller = await db.users.find_one({"user_id": dispute["seller_id"]})
                 if seller:
                     dispute["seller_name"] = seller.get("business_name", "מוכר")
 
@@ -363,11 +363,11 @@ class DisputeService:
                         dispute["coupon"] = coupon
 
                 # מידע על קונה ומוכר
-                buyer = await db.users.find_one({"telegram_id": dispute["buyer_id"]})
+                buyer = await db.users.find_one({"user_id": dispute["buyer_id"]})
                 if buyer:
                     dispute["buyer_name"] = buyer.get("first_name", "קונה")
 
-                seller = await db.users.find_one({"telegram_id": dispute["seller_id"]})
+                seller = await db.users.find_one({"user_id": dispute["seller_id"]})
                 if seller:
                     dispute["seller_name"] = seller.get("business_name", "מוכר")
 

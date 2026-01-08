@@ -117,7 +117,7 @@ class ChatService:
                 from telegram import Bot
                 bot = Bot(Config.BOT_TOKEN)
 
-                sender = await db.users.find_one({"telegram_id": sender_id})
+                sender = await db.users.find_one({"user_id": sender_id})
                 sender_name = sender.get("first_name", "משתמש") if sender else "משתמש"
 
                 await bot.send_message(
@@ -212,7 +212,7 @@ class ChatService:
                 is_buyer = user_id == chat["buyer_id"]
                 other_user_id = chat["seller_id"] if is_buyer else chat["buyer_id"]
 
-                other_user = await db.users.find_one({"telegram_id": other_user_id})
+                other_user = await db.users.find_one({"user_id": other_user_id})
 
                 if other_user:
                     chat["other_user_name"] = other_user.get("first_name") or other_user.get("business_name", "משתמש")
@@ -364,7 +364,7 @@ class ChatService:
                     is_buyer = user_id == chat["buyer_id"]
                     other_user_id = chat["seller_id"] if is_buyer else chat["buyer_id"]
 
-                    other_user = await db.users.find_one({"telegram_id": other_user_id})
+                    other_user = await db.users.find_one({"user_id": other_user_id})
                     if other_user:
                         chat["other_user_name"] = other_user.get("first_name") or other_user.get("business_name", "משתמש")
 
@@ -428,8 +428,8 @@ class ChatService:
 
             # הוספת מידע על המשתתפים
             for chat in chats:
-                buyer = await db.users.find_one({"telegram_id": chat["buyer_id"]})
-                seller = await db.users.find_one({"telegram_id": chat["seller_id"]})
+                buyer = await db.users.find_one({"user_id": chat["buyer_id"]})
+                seller = await db.users.find_one({"user_id": chat["seller_id"]})
 
                 chat["buyer_name"] = buyer.get("first_name", "קונה") if buyer else "קונה"
                 chat["seller_name"] = seller.get("business_name", "מוכר") if seller else "מוכר"

@@ -24,7 +24,7 @@ class PayoutService:
             Tuple[can_request, error_message]
         """
         try:
-            user = await db.users.find_one({"telegram_id": seller_id})
+            user = await db.users.find_one({"user_id": seller_id})
 
             if not user:
                 return False, "❌ משתמש לא נמצא"
@@ -108,7 +108,7 @@ class PayoutService:
 
             # הקפאת יתרה
             await db.users.update_one(
-                {"telegram_id": seller_id},
+                {"user_id": seller_id},
                 {
                     "$inc": {
                         "balance": -amount,
@@ -131,7 +131,7 @@ class PayoutService:
             admins = await db.users.find({"role": "admin"}).to_list(length=None)
             for admin in admins:
                 await NotificationService.send_notification(
-                    user_id=admin["telegram_id"],
+                    user_id=admin["user_id"],
                     title="💰 בקשת משיכה חדשה",
                     message=f"מוכר מבקש למשוך {net_amount:.2f}₪",
                     notification_type="payout_request_admin",
@@ -177,7 +177,7 @@ class PayoutService:
 
             # שחרור יתרה קפואה (ניכוי מההקפאה)
             await db.users.update_one(
-                {"telegram_id": payout["seller_id"]},
+                {"user_id": payout["seller_id"]},
                 {
                     "$inc": {"frozen_balance": -payout["amount"]},
                     "$set": {"updated_at": datetime.utcnow()}
@@ -241,7 +241,7 @@ class PayoutService:
 
             # החזרת יתרה מהקפאה
             await db.users.update_one(
-                {"telegram_id": payout["seller_id"]},
+                {"user_id": payout["seller_id"]},
                 {
                     "$inc": {
                         "balance": payout["amount"],
@@ -279,7 +279,7 @@ class PayoutService:
 
             # הוספת מידע על המוכרים
             for payout in payouts:
-                seller = await db.users.find_one({"telegram_id": payout["seller_id"]})
+                seller = await db.users.find_one({"user_id": payout["seller_id"]})
                 if seller:
                     payout["seller_name"] = seller.get("business_name", "מוכר")
                     payout["seller_verified"] = seller.get("verified", False)
@@ -316,7 +316,7 @@ class PayoutService:
 
             if payout:
                 # הוספת מידע על המוכר
-                seller = await db.users.find_one({"telegram_id": payout["seller_id"]})
+                seller = await db.users.find_one({"user_id": payout["seller_id"]})
                 if seller:
                     payout["seller_name"] = seller.get("business_name", "מוכר")
                     payout["seller_verified"] = seller.get("verified", False)
@@ -331,7 +331,7 @@ class PayoutService:
     async def calculate_available_for_payout(seller_id: int) -> float:
         """חישוב סכום זמין למשיכה"""
         try:
-            user = await db.users.find_one({"telegram_id": seller_id})
+            user = await db.users.find_one({"user_id": seller_id})
 
             if not user:
                 return 0.0

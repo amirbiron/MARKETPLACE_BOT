@@ -89,7 +89,7 @@ class ChatHandlers:
         is_buyer = user_id == chat["buyer_id"]
         other_user_id = chat["seller_id"] if is_buyer else chat["buyer_id"]
 
-        other_user = await db.users.find_one({"telegram_id": other_user_id})
+        other_user = await db.users.find_one({"user_id": other_user_id})
         other_name = other_user.get("first_name") or other_user.get("business_name", "משתמש") if other_user else "משתמש"
 
         text = f"💬 *שיחה עם {other_name}*\n\n"
@@ -193,7 +193,7 @@ class ChatHandlers:
         # שמירת chat_id
         context.user_data["current_chat_id"] = chat_id
 
-        seller = await db.users.find_one({"telegram_id": seller_id})
+        seller = await db.users.find_one({"user_id": seller_id})
         seller_name = seller.get("business_name", "מוכר") if seller else "מוכר"
 
         await query.edit_message_text(
