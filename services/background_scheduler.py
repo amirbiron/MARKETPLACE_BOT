@@ -8,6 +8,7 @@ from services.favorites_service import FavoritesService
 from services.notification_service import NotificationService
 from services.fraud_detection_service import FraudDetectionService
 from services.escrow_service import EscrowService
+from services.payment_gateway_service import PaymentGatewayService
 from database import db
 from config import Config
 import logging
@@ -50,6 +51,8 @@ class BackgroundScheduler:
             # Escrow Tasks
             asyncio.create_task(self._process_escrow_releases()),
             asyncio.create_task(self._escrow_daily_reconciliation()),
+            # Payment Gateway Tasks
+            asyncio.create_task(self._expire_old_payment_transactions()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -489,6 +492,28 @@ class BackgroundScheduler:
                 logger.error(f"Error in escrow daily reconciliation: {e}")
 
             await asyncio.sleep(86400)  # יום
+
+    # ==================== Payment Gateway Tasks ====================
+
+    async def _expire_old_payment_transactions(self):
+        """
+        סימון עסקאות תשלום שפג תוקפן - כל 10 דקות
+        
+        עסקאות שלא הושלמו בזמן הקצוב מסומנות כ-expired
+        """
+        while self.running:
+            try:
+                logger.debug("Checking for expired payment transactions...")
+                
+                expired_count = await PaymentGatewayService.expire_old_transactions()
+                
+                if expired_count > 0:
+                    logger.info(f"Expired {expired_count} old payment transactions")
+                    
+            except Exception as e:
+                logger.error(f"Error expiring payment transactions: {e}")
+
+            await asyncio.sleep(600)  # 10 דקות
 
 
 # יצירת instance גלובלי

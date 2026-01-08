@@ -722,3 +722,337 @@ class EscrowLog:
             notes=data.get("notes"),
             created_at=data.get("created_at"),
         )
+
+
+# ==================== Payment Gateway Models ====================
+
+
+class PaymentGateway(str, Enum):
+    """ספקי סליקה נתמכים"""
+    TRANZILA = "tranzila"
+    CARDCOM = "cardcom"
+    PAYPLUS = "payplus"
+    MESHULAM = "meshulam"
+    STRIPE = "stripe"  # אופציונלי לעתיד
+    PAYPAL = "paypal"  # אופציונלי לעתיד
+
+
+class PaymentTransactionStatus(str, Enum):
+    """סטטוסי עסקאות תשלום"""
+    PENDING = "pending"  # ממתין לתשלום
+    PROCESSING = "processing"  # בעיבוד
+    COMPLETED = "completed"  # הושלם בהצלחה
+    FAILED = "failed"  # נכשל
+    CANCELLED = "cancelled"  # בוטל
+    REFUNDED = "refunded"  # הוחזר
+    EXPIRED = "expired"  # פג תוקף
+
+
+class PaymentTransactionType(str, Enum):
+    """סוגי עסקאות תשלום"""
+    DEPOSIT = "deposit"  # טעינת יתרה
+    DIRECT_PURCHASE = "direct_purchase"  # קניה ישירה
+    RECURRING = "recurring"  # תשלום חוזר
+    PAYOUT = "payout"  # משיכה לבנק/פייפאל
+
+
+class PayoutMethod(str, Enum):
+    """שיטות משיכה למוכרים"""
+    BANK_TRANSFER = "bank_transfer"  # העברה בנקאית
+    PAYPAL = "paypal"  # PayPal
+    PAYONEER = "payoneer"  # Payoneer
+    BIT = "bit"  # ביט
+
+
+class PayoutTransactionStatus(str, Enum):
+    """סטטוסי משיכות"""
+    PENDING = "pending"  # ממתין לאישור
+    APPROVED = "approved"  # אושר
+    PROCESSING = "processing"  # בעיבוד
+    COMPLETED = "completed"  # הושלם
+    FAILED = "failed"  # נכשל
+    REJECTED = "rejected"  # נדחה
+
+
+class PaymentTransaction:
+    """מודל עסקת תשלום בכרטיס אשראי"""
+    
+    def __init__(
+        self,
+        user_id: int,
+        gateway: PaymentGateway,
+        transaction_type: PaymentTransactionType,
+        amount: float,
+        currency: str = "ILS",
+        status: PaymentTransactionStatus = PaymentTransactionStatus.PENDING,
+        gateway_transaction_id: Optional[str] = None,
+        card_last4: Optional[str] = None,
+        card_brand: Optional[str] = None,
+        card_token: Optional[str] = None,  # טוקן לשמירת כרטיס
+        description: Optional[str] = None,
+        order_id: Optional[ObjectId] = None,  # אם זו קניה ישירה
+        payment_url: Optional[str] = None,  # URL לדף תשלום
+        webhook_received: bool = False,
+        metadata: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        expires_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.user_id = user_id
+        self.gateway = gateway
+        self.transaction_type = transaction_type
+        self.amount = amount
+        self.currency = currency
+        self.status = status
+        self.gateway_transaction_id = gateway_transaction_id
+        self.card_last4 = card_last4
+        self.card_brand = card_brand
+        self.card_token = card_token
+        self.description = description
+        self.order_id = order_id
+        self.payment_url = payment_url
+        self.webhook_received = webhook_received
+        self.metadata = metadata or {}
+        self.error_message = error_message
+        self.created_at = created_at or datetime.utcnow()
+        self.completed_at = completed_at
+        self.expires_at = expires_at or (datetime.utcnow() + timedelta(minutes=30))
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "user_id": self.user_id,
+            "gateway": self.gateway.value if isinstance(self.gateway, Enum) else self.gateway,
+            "transaction_type": self.transaction_type.value if isinstance(self.transaction_type, Enum) else self.transaction_type,
+            "amount": self.amount,
+            "currency": self.currency,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "gateway_transaction_id": self.gateway_transaction_id,
+            "card_last4": self.card_last4,
+            "card_brand": self.card_brand,
+            "card_token": self.card_token,
+            "description": self.description,
+            "order_id": self.order_id,
+            "payment_url": self.payment_url,
+            "webhook_received": self.webhook_received,
+            "metadata": self.metadata,
+            "error_message": self.error_message,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+            "expires_at": self.expires_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PaymentTransaction":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            user_id=data["user_id"],
+            gateway=PaymentGateway(data.get("gateway", "tranzila")),
+            transaction_type=PaymentTransactionType(data.get("transaction_type", "deposit")),
+            amount=data["amount"],
+            currency=data.get("currency", "ILS"),
+            status=PaymentTransactionStatus(data.get("status", "pending")),
+            gateway_transaction_id=data.get("gateway_transaction_id"),
+            card_last4=data.get("card_last4"),
+            card_brand=data.get("card_brand"),
+            card_token=data.get("card_token"),
+            description=data.get("description"),
+            order_id=data.get("order_id"),
+            payment_url=data.get("payment_url"),
+            webhook_received=data.get("webhook_received", False),
+            metadata=data.get("metadata", {}),
+            error_message=data.get("error_message"),
+            created_at=data.get("created_at"),
+            completed_at=data.get("completed_at"),
+            expires_at=data.get("expires_at"),
+        )
+
+
+class SavedCard:
+    """מודל כרטיס שמור"""
+    
+    def __init__(
+        self,
+        user_id: int,
+        gateway: PaymentGateway,
+        card_token: str,
+        card_last4: str,
+        card_brand: str,  # Visa, Mastercard, etc.
+        card_expiry: Optional[str] = None,  # MM/YY
+        is_default: bool = False,
+        nickname: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        last_used_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.user_id = user_id
+        self.gateway = gateway
+        self.card_token = card_token
+        self.card_last4 = card_last4
+        self.card_brand = card_brand
+        self.card_expiry = card_expiry
+        self.is_default = is_default
+        self.nickname = nickname
+        self.created_at = created_at or datetime.utcnow()
+        self.last_used_at = last_used_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "user_id": self.user_id,
+            "gateway": self.gateway.value if isinstance(self.gateway, Enum) else self.gateway,
+            "card_token": self.card_token,
+            "card_last4": self.card_last4,
+            "card_brand": self.card_brand,
+            "card_expiry": self.card_expiry,
+            "is_default": self.is_default,
+            "nickname": self.nickname,
+            "created_at": self.created_at,
+            "last_used_at": self.last_used_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SavedCard":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            user_id=data["user_id"],
+            gateway=PaymentGateway(data.get("gateway", "tranzila")),
+            card_token=data["card_token"],
+            card_last4=data["card_last4"],
+            card_brand=data["card_brand"],
+            card_expiry=data.get("card_expiry"),
+            is_default=data.get("is_default", False),
+            nickname=data.get("nickname"),
+            created_at=data.get("created_at"),
+            last_used_at=data.get("last_used_at"),
+        )
+
+
+class PayoutTransaction:
+    """מודל עסקת משיכה למוכר"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        amount: float,
+        fee: float,
+        net_amount: float,
+        method: PayoutMethod,
+        status: PayoutTransactionStatus = PayoutTransactionStatus.PENDING,
+        payout_details: Optional[Dict[str, Any]] = None,  # פרטי בנק/פייפאל
+        gateway_reference: Optional[str] = None,
+        processed_by: Optional[int] = None,  # admin_id
+        notes: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        processed_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.amount = amount
+        self.fee = fee
+        self.net_amount = net_amount
+        self.method = method
+        self.status = status
+        self.payout_details = payout_details or {}
+        self.gateway_reference = gateway_reference
+        self.processed_by = processed_by
+        self.notes = notes
+        self.created_at = created_at or datetime.utcnow()
+        self.processed_at = processed_at
+        self.completed_at = completed_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "seller_id": self.seller_id,
+            "amount": self.amount,
+            "fee": self.fee,
+            "net_amount": self.net_amount,
+            "method": self.method.value if isinstance(self.method, Enum) else self.method,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "payout_details": self.payout_details,
+            "gateway_reference": self.gateway_reference,
+            "processed_by": self.processed_by,
+            "notes": self.notes,
+            "created_at": self.created_at,
+            "processed_at": self.processed_at,
+            "completed_at": self.completed_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PayoutTransaction":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            amount=data["amount"],
+            fee=data.get("fee", 0),
+            net_amount=data.get("net_amount", data["amount"]),
+            method=PayoutMethod(data.get("method", "bank_transfer")),
+            status=PayoutTransactionStatus(data.get("status", "pending")),
+            payout_details=data.get("payout_details", {}),
+            gateway_reference=data.get("gateway_reference"),
+            processed_by=data.get("processed_by"),
+            notes=data.get("notes"),
+            created_at=data.get("created_at"),
+            processed_at=data.get("processed_at"),
+            completed_at=data.get("completed_at"),
+        )
+
+
+class DailyCardLimit:
+    """מודל הגבלת סכום יומי לכרטיס"""
+    
+    def __init__(
+        self,
+        user_id: int,
+        date: datetime,
+        total_amount: float = 0.0,
+        transaction_count: int = 0,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.user_id = user_id
+        self.date = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.total_amount = total_amount
+        self.transaction_count = transaction_count
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "user_id": self.user_id,
+            "date": self.date,
+            "total_amount": self.total_amount,
+            "transaction_count": self.transaction_count,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DailyCardLimit":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            user_id=data["user_id"],
+            date=data["date"],
+            total_amount=data.get("total_amount", 0.0),
+            transaction_count=data.get("transaction_count", 0),
+        )

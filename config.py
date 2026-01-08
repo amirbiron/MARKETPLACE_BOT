@@ -71,6 +71,66 @@ class Config:
     ESCROW_DISPUTE_EXTENSION_HOURS: int = 48  # הארכה במקרה של מחלוקת
     ESCROW_MIN_AMOUNT: float = 1.0  # מינימום סכום ל-escrow
     
+    # === Payment Gateway Settings ===
+    
+    # Active payment gateway (tranzila, cardcom, payplus, meshulam)
+    PAYMENT_GATEWAY: str = os.getenv("PAYMENT_GATEWAY", "tranzila")
+    PAYMENT_GATEWAY_ENABLED: bool = os.getenv("PAYMENT_GATEWAY_ENABLED", "false").lower() == "true"
+    
+    # Tranzila Settings
+    TRANZILA_TERMINAL: str = os.getenv("TRANZILA_TERMINAL", "")
+    TRANZILA_PASSWORD: str = os.getenv("TRANZILA_PASSWORD", "")
+    TRANZILA_API_URL: str = os.getenv("TRANZILA_API_URL", "https://secure5.tranzila.com/cgi-bin/tranzila71.cgi")
+    
+    # CardCom Settings
+    CARDCOM_TERMINAL: str = os.getenv("CARDCOM_TERMINAL", "")
+    CARDCOM_USERNAME: str = os.getenv("CARDCOM_USERNAME", "")
+    CARDCOM_API_KEY: str = os.getenv("CARDCOM_API_KEY", "")
+    CARDCOM_API_URL: str = os.getenv("CARDCOM_API_URL", "https://secure.cardcom.solutions/interface/ChargeToken.aspx")
+    
+    # PayPlus Settings
+    PAYPLUS_API_KEY: str = os.getenv("PAYPLUS_API_KEY", "")
+    PAYPLUS_SECRET_KEY: str = os.getenv("PAYPLUS_SECRET_KEY", "")
+    PAYPLUS_TERMINAL_UID: str = os.getenv("PAYPLUS_TERMINAL_UID", "")
+    PAYPLUS_API_URL: str = os.getenv("PAYPLUS_API_URL", "https://restapidev.payplus.co.il/api/v1.0")
+    
+    # Meshulam Settings
+    MESHULAM_PAGE_CODE: str = os.getenv("MESHULAM_PAGE_CODE", "")
+    MESHULAM_USER_ID: str = os.getenv("MESHULAM_USER_ID", "")
+    MESHULAM_API_KEY: str = os.getenv("MESHULAM_API_KEY", "")
+    MESHULAM_API_URL: str = os.getenv("MESHULAM_API_URL", "https://secure.meshulam.co.il/api")
+    
+    # Webhook Settings
+    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "")  # URL for payment callbacks
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")  # Secret for verifying webhooks
+    
+    # Payment Security Settings
+    PAYMENT_3D_SECURE_ENABLED: bool = os.getenv("PAYMENT_3D_SECURE_ENABLED", "true").lower() == "true"
+    DAILY_CARD_LIMIT: float = float(os.getenv("DAILY_CARD_LIMIT", "5000"))  # מקסימום יומי לכרטיס
+    MAX_TRANSACTION_AMOUNT: float = float(os.getenv("MAX_TRANSACTION_AMOUNT", "2000"))  # מקסימום לעסקה בודדת
+    MIN_CARD_PAYMENT: float = float(os.getenv("MIN_CARD_PAYMENT", "10"))  # מינימום תשלום בכרטיס
+    PAYMENT_TIMEOUT_MINUTES: int = int(os.getenv("PAYMENT_TIMEOUT_MINUTES", "30"))  # זמן לתשלום
+    
+    # Saved Cards Settings
+    ALLOW_SAVE_CARD: bool = os.getenv("ALLOW_SAVE_CARD", "true").lower() == "true"
+    MAX_SAVED_CARDS_PER_USER: int = int(os.getenv("MAX_SAVED_CARDS_PER_USER", "5"))
+    
+    # Payout Settings (Automated Seller Payouts)
+    AUTO_PAYOUT_ENABLED: bool = os.getenv("AUTO_PAYOUT_ENABLED", "false").lower() == "true"
+    PAYOUT_COMMISSION: float = float(os.getenv("PAYOUT_COMMISSION", "0.01"))  # 1% עמלת משיכה
+    MIN_AUTO_PAYOUT_AMOUNT: float = float(os.getenv("MIN_AUTO_PAYOUT_AMOUNT", "200"))
+    PAYOUT_PROCESSING_DAYS: int = int(os.getenv("PAYOUT_PROCESSING_DAYS", "3"))  # ימי עסקים
+    
+    # PayPal Payout Settings (Optional)
+    PAYPAL_CLIENT_ID: str = os.getenv("PAYPAL_CLIENT_ID", "")
+    PAYPAL_CLIENT_SECRET: str = os.getenv("PAYPAL_CLIENT_SECRET", "")
+    PAYPAL_MODE: str = os.getenv("PAYPAL_MODE", "sandbox")  # sandbox or live
+    
+    # Payoneer Payout Settings (Optional)
+    PAYONEER_PROGRAM_ID: str = os.getenv("PAYONEER_PROGRAM_ID", "")
+    PAYONEER_API_KEY: str = os.getenv("PAYONEER_API_KEY", "")
+    PAYONEER_API_URL: str = os.getenv("PAYONEER_API_URL", "https://api.sandbox.payoneer.com")
+    
     # === Anti-Fraud Settings ===
     
     # Trust Score Thresholds

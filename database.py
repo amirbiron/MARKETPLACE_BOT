@@ -39,6 +39,10 @@ class Database:
         self.fraud_logs: Optional[AsyncIOMotorCollection] = None
         self.escrow_transactions: Optional[AsyncIOMotorCollection] = None
         self.escrow_logs: Optional[AsyncIOMotorCollection] = None
+        self.payment_gateway_transactions: Optional[AsyncIOMotorCollection] = None
+        self.saved_cards: Optional[AsyncIOMotorCollection] = None
+        self.payout_transactions: Optional[AsyncIOMotorCollection] = None
+        self.daily_card_limits: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -67,6 +71,10 @@ class Database:
             self.fraud_logs = self.db["fraud_logs"]
             self.escrow_transactions = self.db["escrow_transactions"]
             self.escrow_logs = self.db["escrow_logs"]
+            self.payment_gateway_transactions = self.db["payment_gateway_transactions"]
+            self.saved_cards = self.db["saved_cards"]
+            self.payout_transactions = self.db["payout_transactions"]
+            self.daily_card_limits = self.db["daily_card_limits"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -208,6 +216,36 @@ class Database:
             await self.escrow_logs.create_indexes([
                 IndexModel([("escrow_id", ASCENDING), ("created_at", DESCENDING)]),
                 IndexModel([("action", ASCENDING), ("created_at", DESCENDING)]),
+            ])
+
+            # Payment gateway transactions indexes
+            await self.payment_gateway_transactions.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("gateway", ASCENDING), ("status", ASCENDING)]),
+                IndexModel([("gateway_transaction_id", ASCENDING)]),
+                IndexModel([("expires_at", ASCENDING)], sparse=True),
+                IndexModel([("order_id", ASCENDING)], sparse=True),
+            ])
+
+            # Saved cards indexes
+            await self.saved_cards.create_indexes([
+                IndexModel([("user_id", ASCENDING)]),
+                IndexModel([("user_id", ASCENDING), ("is_default", ASCENDING)]),
+                IndexModel([("card_token", ASCENDING)], unique=True),
+            ])
+
+            # Payout transactions indexes
+            await self.payout_transactions.create_indexes([
+                IndexModel([("seller_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+                IndexModel([("method", ASCENDING), ("status", ASCENDING)]),
+                IndexModel([("gateway_reference", ASCENDING)], sparse=True),
+            ])
+
+            # Daily card limits indexes
+            await self.daily_card_limits.create_indexes([
+                IndexModel([("user_id", ASCENDING), ("date", ASCENDING)], unique=True),
             ])
             
             logger.info("Database indexes created successfully")
@@ -761,3 +799,23 @@ async def get_escrow_transactions_collection() -> AsyncIOMotorCollection:
 async def get_escrow_logs_collection() -> AsyncIOMotorCollection:
     await _ensure_connected()
     return db.escrow_logs
+
+
+async def get_payment_gateway_transactions_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.payment_gateway_transactions
+
+
+async def get_saved_cards_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.saved_cards
+
+
+async def get_payout_transactions_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.payout_transactions
+
+
+async def get_daily_card_limits_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.daily_card_limits

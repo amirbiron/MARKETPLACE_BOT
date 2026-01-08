@@ -292,11 +292,22 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             text += f"\n💡 יתרה קפואה: 0₪\n"
         
-        keyboard = [
-            [InlineKeyboardButton("➕ הוסף יתרה", callback_data="add_balance")],
-            [InlineKeyboardButton("📊 היסטוריית תנועות", callback_data="transaction_history")],
-            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
-        ]
+        keyboard = []
+        
+        # אפשרויות טעינה
+        if Config.PAYMENT_GATEWAY_ENABLED:
+            keyboard.append([
+                InlineKeyboardButton("💳 תשלום בכרטיס אשראי", callback_data="pay_credit_card")
+            ])
+            keyboard.append([
+                InlineKeyboardButton("➕ הוסף יתרה (ביט/העברה)", callback_data="add_balance")
+            ])
+        else:
+            keyboard.append([
+                InlineKeyboardButton("➕ הוסף יתרה", callback_data="add_balance")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("📊 היסטוריית תנועות", callback_data="transaction_history")])
         
         # אם מוכר - הצג אפשרות משיכה
         user = await UserService.get_user(user_id)
@@ -305,7 +316,16 @@ async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TY
             text += f"\n💸 זמין למשיכה: {available:.2f}₪\n"
             
             if available >= Config.MIN_PAYOUT_AMOUNT:
-                keyboard.insert(1, [InlineKeyboardButton("💸 בקשת משיכה", callback_data="request_payout")])
+                if Config.AUTO_PAYOUT_ENABLED:
+                    keyboard.append([InlineKeyboardButton("💸 משיכת כספים", callback_data="automated_payout")])
+                else:
+                    keyboard.append([InlineKeyboardButton("💸 בקשת משיכה", callback_data="request_payout")])
+        
+        # ניהול כרטיסים שמורים
+        if Config.PAYMENT_GATEWAY_ENABLED and Config.ALLOW_SAVE_CARD:
+            keyboard.append([InlineKeyboardButton("💳 כרטיסים שמורים", callback_data="cc_manage_cards")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
         
         await query.edit_message_text(
             text,
