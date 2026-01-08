@@ -562,3 +562,216 @@ class Keyboards:
             "cancelled": "❌ בוטל"
         }
         return status_map.get(status, status)
+
+    # ==================== Payment Gateway Keyboards ====================
+
+    @staticmethod
+    def payment_methods_keyboard(gateway_enabled: bool = False) -> InlineKeyboardMarkup:
+        """מקלדת בחירת אמצעי תשלום"""
+        keyboard = []
+        
+        # תשלום בכרטיס אשראי (אם מופעל)
+        if gateway_enabled:
+            keyboard.append([
+                InlineKeyboardButton("💳 כרטיס אשראי", callback_data="pay_credit_card")
+            ])
+        
+        # שיטות ידניות
+        keyboard.extend([
+            [InlineKeyboardButton("📱 ביט / פייבוקס", callback_data="deposit_manual")],
+            [InlineKeyboardButton("🏦 העברה בנקאית", callback_data="deposit_manual")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="my_balance")]
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def credit_card_amounts_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת סכומים לתשלום בכרטיס"""
+        keyboard = [
+            [
+                InlineKeyboardButton("50₪", callback_data="cc_amount_50"),
+                InlineKeyboardButton("100₪", callback_data="cc_amount_100"),
+            ],
+            [
+                InlineKeyboardButton("200₪", callback_data="cc_amount_200"),
+                InlineKeyboardButton("500₪", callback_data="cc_amount_500"),
+            ],
+            [InlineKeyboardButton("💰 סכום אחר", callback_data="cc_custom_amount")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="add_balance")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def saved_cards_keyboard(
+        cards: List[Tuple[str, str, str, bool]],  # (card_id, brand, last4, is_default)
+        show_new_card: bool = True
+    ) -> InlineKeyboardMarkup:
+        """מקלדת כרטיסים שמורים"""
+        keyboard = []
+        
+        for card_id, brand, last4, is_default in cards:
+            emoji = "⭐" if is_default else "💳"
+            text = f"{emoji} {brand} ****{last4}"
+            keyboard.append([
+                InlineKeyboardButton(text, callback_data=f"cc_use_card_{card_id}")
+            ])
+        
+        if show_new_card:
+            keyboard.append([
+                InlineKeyboardButton("💳 כרטיס חדש", callback_data="cc_new_card")
+            ])
+            keyboard.append([
+                InlineKeyboardButton("💳➕ כרטיס חדש + שמירה", callback_data="cc_new_card_save")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="pay_credit_card")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def payment_pending_keyboard(
+        payment_url: str,
+        transaction_id: str
+    ) -> InlineKeyboardMarkup:
+        """מקלדת תשלום ממתין"""
+        keyboard = [
+            [InlineKeyboardButton("💳 מעבר לתשלום", url=payment_url)],
+            [InlineKeyboardButton("🔄 בדוק סטטוס", callback_data=f"cc_check_status_{transaction_id}")],
+            [InlineKeyboardButton("❌ ביטול", callback_data="my_balance")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def card_management_keyboard(
+        card_id: str,
+        is_default: bool = False
+    ) -> InlineKeyboardMarkup:
+        """מקלדת ניהול כרטיס בודד"""
+        keyboard = []
+        
+        if not is_default:
+            keyboard.append([
+                InlineKeyboardButton("⭐ הגדר כברירת מחדל", callback_data=f"cc_set_default_{card_id}")
+            ])
+        
+        keyboard.append([
+            InlineKeyboardButton("🗑️ מחק כרטיס", callback_data=f"cc_delete_card_{card_id}")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🔙 חזרה", callback_data="cc_manage_cards")
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def payout_methods_keyboard(
+        has_paypal: bool = False,
+        has_payoneer: bool = False
+    ) -> InlineKeyboardMarkup:
+        """מקלדת שיטות משיכה"""
+        keyboard = [
+            [InlineKeyboardButton("🏦 העברה בנקאית", callback_data="payout_method_bank_transfer")],
+            [InlineKeyboardButton("📱 ביט", callback_data="payout_method_bit")],
+        ]
+        
+        if has_paypal:
+            keyboard.append([
+                InlineKeyboardButton("🅿️ PayPal", callback_data="payout_method_paypal")
+            ])
+        
+        if has_payoneer:
+            keyboard.append([
+                InlineKeyboardButton("💳 Payoneer", callback_data="payout_method_payoneer")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="my_balance")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def payout_confirm_keyboard(
+        use_saved: bool = False
+    ) -> InlineKeyboardMarkup:
+        """מקלדת אישור פרטי משיכה"""
+        keyboard = []
+        
+        if use_saved:
+            keyboard.append([
+                InlineKeyboardButton("✅ השתמש בפרטים שמורים", callback_data="payout_use_saved")
+            ])
+        
+        keyboard.append([
+            InlineKeyboardButton("📝 הזן פרטים חדשים", callback_data="payout_new_details")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("🔙 חזרה", callback_data="automated_payout")
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def payment_gateway_status_display(status: str) -> str:
+        """המרת סטטוס תשלום לתצוגה"""
+        status_map = {
+            "pending": "⏳ ממתין לתשלום",
+            "processing": "🔄 בעיבוד",
+            "completed": "✅ הושלם",
+            "failed": "❌ נכשל",
+            "cancelled": "🚫 בוטל",
+            "expired": "⌛ פג תוקף",
+            "refunded": "↩️ הוחזר"
+        }
+        return status_map.get(status, status)
+
+    @staticmethod
+    def payout_method_display(method: str) -> str:
+        """המרת שיטת משיכה לתצוגה"""
+        method_map = {
+            "bank_transfer": "🏦 העברה בנקאית",
+            "bit": "📱 ביט",
+            "paypal": "🅿️ PayPal",
+            "payoneer": "💳 Payoneer"
+        }
+        return method_map.get(method, method)
+
+    @staticmethod
+    def payout_status_display(status: str) -> str:
+        """המרת סטטוס משיכה לתצוגה"""
+        status_map = {
+            "pending": "⏳ ממתין לאישור",
+            "approved": "✅ אושר",
+            "processing": "🔄 בעיבוד",
+            "completed": "✅ הושלם",
+            "failed": "❌ נכשל",
+            "rejected": "🚫 נדחה"
+        }
+        return status_map.get(status, status)
+
+    # ==================== Admin Payment Gateway Keyboards ====================
+
+    @staticmethod
+    def admin_payment_gateway_menu() -> InlineKeyboardMarkup:
+        """מקלדת ניהול סליקה לאדמין"""
+        keyboard = [
+            [InlineKeyboardButton("📊 סטטיסטיקות תשלומים", callback_data="admin_pg_stats")],
+            [InlineKeyboardButton("⏳ עסקאות ממתינות", callback_data="admin_pg_pending")],
+            [InlineKeyboardButton("💸 משיכות ממתינות", callback_data="admin_payouts_pending")],
+            [InlineKeyboardButton("📋 היסטוריית עסקאות", callback_data="admin_pg_history")],
+            [InlineKeyboardButton("⚙️ הגדרות סליקה", callback_data="admin_pg_settings")],
+            [InlineKeyboardButton("🔙 חזרה לפאנל אדמין", callback_data="admin_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def admin_payout_action_keyboard(payout_id: str) -> InlineKeyboardMarkup:
+        """מקלדת פעולות על משיכה (אדמין)"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ אשר ועבד", callback_data=f"admin_process_payout_{payout_id}"),
+                InlineKeyboardButton("❌ דחה", callback_data=f"admin_reject_payout_{payout_id}")
+            ],
+            [InlineKeyboardButton("👤 פרטי מוכר", callback_data=f"admin_payout_seller_{payout_id}")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="admin_payouts_pending")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
