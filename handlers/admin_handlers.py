@@ -14,6 +14,7 @@ from keyboards import Keyboards
 from utils import format_price, format_datetime
 from config import Config
 from datetime import datetime
+from telegram.helpers import escape_markdown
 import database
 import logging
 
@@ -25,6 +26,11 @@ BROADCAST_MESSAGE, BLOCK_USER_ID, ADD_BALANCE_AMOUNT, SEND_USER_MESSAGE = range(
 
 class AdminHandlers:
     """Handlers לאדמינים"""
+
+    @staticmethod
+    def _md(text: object) -> str:
+        """Escape dynamic text for Telegram Markdown (v1)."""
+        return escape_markdown("" if text is None else str(text), version=1)
     
     @staticmethod
     async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,15 +148,15 @@ class AdminHandlers:
         text = f"""
 👤 *פרטי בקשת מוכר*
 
-🏢 שם עסק: {seller.business_name or 'לא צוין'}
-🏷️ שם מסחרי: {commercial}
-📞 טלפון: {seller.phone or 'לא צוין'}
+🏢 שם עסק: {AdminHandlers._md(seller.business_name or 'לא צוין')}
+🏷️ שם מסחרי: {AdminHandlers._md(commercial)}
+📞 טלפון: {AdminHandlers._md(seller.phone or 'לא צוין')}
 {"🆔 ת.ז: סופק ✅" if seller.id_number else "🆔 ת.ז: לא סופק"}
 
-📊 סוג מוכר: {verified_str}
-💰 עמלה: {commission}
-👤 שם: {seller.first_name or 'לא זמין'}
-📛 Telegram: @{seller.username or 'לא זמין'}
+📊 סוג מוכר: {AdminHandlers._md(verified_str)}
+💰 עמלה: {AdminHandlers._md(commission)}
+👤 שם: {AdminHandlers._md(seller.first_name or 'לא זמין')}
+📛 Telegram: @{AdminHandlers._md(seller.username or 'לא זמין')}
 🔑 User ID: `{seller.user_id}`
 
 בחר פעולה:
@@ -167,6 +173,9 @@ class AdminHandlers:
         
         seller_id = int(query.data.replace("approve_seller_", ""))
         seller = await UserService.get_user(seller_id)
+        if not seller:
+            await query.edit_message_text("❌ המוכר לא נמצא.")
+            return
         
         # עדכון סטטוס לאושר
         success = await UserService.approve_seller(seller_id)
@@ -181,13 +190,23 @@ class AdminHandlers:
                 await context.bot.send_message(
                     seller_id,
                     f"🎉 *מזל טוב! בקשתך אושרה!*\n\n"
-                    f"🏷️ שם מסחרי: {commercial}\n"
-                    f"📊 סוג מוכר: {verified_str}\n"
-                    f"💰 עמלה: {commission}\n\n"
+                    f"🏷️ שם מסחרי: {AdminHandlers._md(commercial)}\n"
+                    f"📊 סוג מוכר: {AdminHandlers._md(verified_str)}\n"
+                    f"💰 עמלה: {AdminHandlers._md(commission)}\n\n"
                     f"✅ כעת תוכל להתחיל להעלות קופונים!\n"
                     f"השתמש ב-/upload להעלאת קופון חדש.",
                     parse_mode="Markdown"
                 )
+
+                # שליחת תפריט מעודכן כדי שהכפתורים יתעדכנו אצל המוכר
+                updated_seller = await UserService.get_user(seller_id)
+                if updated_seller:
+                    await context.bot.send_message(
+                        chat_id=seller_id,
+                        text="🏠 *התפריט שלך עודכן*",
+                        reply_markup=Keyboards.main_menu(updated_seller.role),
+                        parse_mode="Markdown",
+                    )
             except Exception as e:
                 logger.error(f"Failed to notify seller {seller_id}: {e}")
             
@@ -500,23 +519,23 @@ class AdminHandlers:
 👤 *פרטי משתמש*
 
 🆔 ID: `{user.user_id}`
-📛 שם: {user.first_name or 'לא מוגדר'}
-👤 Username: @{user.username or 'לא מוגדר'}
+📛 שם: {AdminHandlers._md(user.first_name or 'לא מוגדר')}
+👤 Username: @{AdminHandlers._md(user.username or 'לא מוגדר')}
 
-📋 תפקיד: {role_text}
-📊 סטטוס: {blocked_status}
+📋 תפקיד: {AdminHandlers._md(role_text)}
+📊 סטטוס: {AdminHandlers._md(blocked_status)}
 
-💰 יתרה: {format_price(user.balance)}
-🔒 קפואה: {format_price(user.frozen_balance)}
+💰 יתרה: {AdminHandlers._md(format_price(user.balance))}
+🔒 קפואה: {AdminHandlers._md(format_price(user.frozen_balance))}
 📦 הזמנות: {order_count}
 
 📅 הצטרף: {user.created_at.strftime('%d/%m/%Y %H:%M') if user.created_at else 'לא ידוע'}
 """
         
         if user.business_name:
-            text += f"\n🏪 שם עסק: {user.business_name}"
+            text += f"\n🏪 שם עסק: {AdminHandlers._md(user.business_name)}"
         if user.phone:
-            text += f"\n📱 טלפון: {user.phone}"
+            text += f"\n📱 טלפון: {AdminHandlers._md(user.phone)}"
         
         # כפתורי פעולה
         keyboard = []
@@ -537,8 +556,19 @@ class AdminHandlers:
         """חסימת משתמש"""
         query = update.callback_query
         await query.answer()
-        
-        user_id = int(query.data.replace("sys_block_", ""))
+
+        raw_id = (query.data or "").replace("sys_block_", "")
+        try:
+            user_id = int(raw_id)
+        except ValueError:
+            await query.edit_message_text(
+                "❌ חסימת משתמש דורשת בחירת משתמש (ID).\n"
+                "היכנס ל-\"ניהול משתמשים\" ובחר משתמש מהרשימה.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="sys_manage_users")
+                ]])
+            )
+            return
         
         users_col = await database.get_users_collection()
         result = await users_col.update_one(
@@ -1340,7 +1370,7 @@ class AdminHandlers:
             user_id = user_data.get("user_id")
             auto = "🤖" if user_data.get("auto_blocked") else "👤"
             
-            text += f"{auto} {name} (ID: `{user_id}`)\n"
+            text += f"{auto} {AdminHandlers._md(name)} (ID: `{user_id}`)\n"
             users_list.append((f"{auto} {name}", user_id))
         
         keyboard = Keyboards.fraud_blocked_users_keyboard(users_list[:10], 0, (len(users_list) + 9) // 10)
@@ -1371,30 +1401,28 @@ class AdminHandlers:
         # ספירת אירועי הונאה
         fraud_history = await FraudDetectionService.get_user_fraud_history(user_id)
         
-        is_blocked = getattr(user, 'blocked', False) or user.__dict__.get('blocked', False)
-        blocked_status = "🚫 חסום" if is_blocked else "✅ פעיל"
-        
         users_col = await database.get_users_collection()
         user_data = await users_col.find_one({"user_id": user_id})
         is_blocked = user_data.get("blocked", False) if user_data else False
+        blocked_status = "🚫 חסום" if is_blocked else "✅ פעיל"
         
         text = f"""
 👤 *פרטי משתמש - פאנל הונאות*
 
 🆔 ID: `{user.user_id}`
-📛 שם: {user.first_name or 'לא מוגדר'}
-👤 Username: @{user.username or 'לא מוגדר'}
+📛 שם: {AdminHandlers._md(user.first_name or 'לא מוגדר')}
+👤 Username: @{AdminHandlers._md(user.username or 'לא מוגדר')}
 
-📋 תפקיד: {user.role.value}
-📊 סטטוס: {blocked_status}
+📋 תפקיד: {AdminHandlers._md(user.role.value)}
+📊 סטטוס: {AdminHandlers._md(blocked_status)}
 
 🛡️ *ניקוד אמינות:*
-{trust_display}
+{AdminHandlers._md(trust_display)}
 
 📈 *היסטוריית הונאה:*
   • סה"כ אירועים: {len(fraud_history)}
 
-💰 יתרה: {format_price(user.balance)}
+💰 יתרה: {AdminHandlers._md(format_price(user.balance))}
 ⭐ דירוג: {user.rating_average:.1f} ({user.rating_count} דירוגים)
 """
         
