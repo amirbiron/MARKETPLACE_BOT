@@ -811,3 +811,65 @@ class BuyerHandlers:
 
         # הצגת העמוד המבוקש
         await BuyerHandlers.show_my_favorites(update, context)
+
+    # ===== התראות - אישור ודיווח מהתראה =====
+
+    @staticmethod
+    async def confirm_from_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """אישור קבלת קופון מתוך התראה"""
+        query = update.callback_query
+        await query.answer()
+
+        order_id = ObjectId(query.data.replace("confirm_from_notif_", ""))
+        success = await OrderService.confirm_order(order_id)
+
+        if success:
+            await query.edit_message_text(
+                "✅ *תודה על האישור!*\n\n"
+                "הקופון אושר בהצלחה.\n"
+                "הכספים שוחררו למוכר.\n\n"
+                "נשמח אם תדרג את המוכר! 😊\n\n"
+                "לדירוג לחץ /myorders ובחר את ההזמנה",
+                parse_mode="Markdown"
+            )
+        else:
+            await query.edit_message_text(
+                "❌ האישור נכשל.\n\nייתכן שההזמנה כבר אושרה או שיש בעיה אחרת.\n\nלצפייה בהזמנות: /myorders"
+            )
+
+    @staticmethod
+    async def report_from_notification(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """דיווח על בעיה מתוך התראה"""
+        query = update.callback_query
+        await query.answer()
+
+        order_id = query.data.replace("report_from_notif_", "")
+
+        # בדיקה אם עדיין ניתן לדווח
+        can_report = await OrderService.can_report_issue(ObjectId(order_id))
+
+        if not can_report:
+            await query.edit_message_text(
+                "❌ חלון הדיווח נסגר.\n\n"
+                "לא ניתן יותר לדווח על בעיה בהזמנה זו.\n"
+                "העסקה הושלמה אוטומטית."
+            )
+            return
+
+        # הפניה לפתיחת מחלוקת
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        keyboard = [
+            [InlineKeyboardButton("🚨 פתח מחלוקת", callback_data=f"report_issue_{order_id}")],
+            [InlineKeyboardButton("💬 צ'אט עם המוכר", callback_data=f"chat_{order_id}")],
+            [InlineKeyboardButton("🔙 ביטול", callback_data=f"order_{order_id}")]
+        ]
+
+        await query.edit_message_text(
+            "🚨 *דיווח על בעיה*\n\n"
+            "מה תרצה לעשות?\n\n"
+            "• *פתח מחלוקת* - יפתח טיפול של צוות התמיכה\n"
+            "• *צ'אט עם המוכר* - נסה לפתור ישירות עם המוכר",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )

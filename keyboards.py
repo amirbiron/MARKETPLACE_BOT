@@ -274,3 +274,22 @@ class Keyboards:
         keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
 
         return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def report_window_keyboard(order_id: str) -> InlineKeyboardMarkup:
+        """מקלדת להתראת חלון דיווח - עם כפתורי אישור ודיווח"""
+        keyboard = [
+            [InlineKeyboardButton("✅ אשר קופון", callback_data=f"confirm_from_notif_{order_id}")],
+            [InlineKeyboardButton("🚨 דווח על בעיה", callback_data=f"report_from_notif_{order_id}")],
+            [InlineKeyboardButton("📦 צפה בהזמנה", callback_data=f"order_{order_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def auction_ending_keyboard(auction_id: str) -> InlineKeyboardMarkup:
+        """מקלדת להתראת סיום מכרז - עם כפתור להגדלת הצעה"""
+        keyboard = [
+            [InlineKeyboardButton("💸 הגדל הצעה", callback_data=f"auction_bid_{auction_id}")],
+            [InlineKeyboardButton("👁️ צפה במכרז", callback_data=f"auction_view_{auction_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)

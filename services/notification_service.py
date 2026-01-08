@@ -196,26 +196,103 @@ class NotificationService:
         )
 
     @staticmethod
-    async def notify_auction_ending_soon(user_id: int, auction_id: str, hours_left: int):
-        """התראה על סיום מכרז קרוב"""
-        await NotificationService.send_notification(
-            user_id=user_id,
-            title=f"⏰ המכרז מסתיים בעוד {hours_left} שעות",
-            message="זה הזמן להגדיל את ההצעה!",
-            notification_type="auction_ending",
-            data={"auction_id": auction_id}
-        )
+    async def notify_auction_ending_soon(user_id: int, auction_id: str, minutes_left: int, is_leading: bool = False):
+        """התראה על סיום מכרז קרוב - עם כפתורים"""
+        try:
+            from telegram import Bot
+            from keyboards import Keyboards
+            bot = Bot(Config.BOT_TOKEN)
+
+            if minutes_left >= 60:
+                time_text = f"{minutes_left // 60} שעות"
+            else:
+                time_text = f"{minutes_left} דקות"
+
+            if is_leading:
+                title = f"⏰ המכרז שאתה מוביל מסתיים בעוד {time_text}"
+                message = "שמור על המיקום שלך - אחרים עשויים להגדיל!"
+            else:
+                title = f"⏰ המכרז מסתיים בעוד {time_text}"
+                message = "זה הזמן להגדיל את ההצעה ולנצח!"
+
+            # שמירה בDB
+            notification_data = {
+                "user_id": user_id,
+                "title": title,
+                "message": message,
+                "type": "auction_ending",
+                "data": {"auction_id": auction_id, "minutes_left": minutes_left},
+                "read": False,
+                "created_at": datetime.utcnow()
+            }
+            await db.notifications.insert_one(notification_data)
+
+            # שליחה עם כפתורים
+            keyboard = Keyboards.auction_ending_keyboard(auction_id)
+            text = f"🔔 *{title}*\n\n{message}"
+            await bot.send_message(user_id, text, reply_markup=keyboard, parse_mode="Markdown")
+
+            logger.info(f"Auction ending notification sent to {user_id}")
+
+        except Exception as e:
+            logger.error(f"Error sending auction ending notification: {e}")
 
     @staticmethod
     async def notify_dispute_deadline(buyer_id: int, order_id: str, hours_left: int):
-        """התראה על קרבת מועד דיווח על בעיה"""
-        await NotificationService.send_notification(
-            user_id=buyer_id,
-            title=f"⚠️ נותרו {hours_left} שעות לדיווח על בעיה",
-            message="אם יש בעיה עם הקופון - זה הזמן לדווח",
-            notification_type="dispute_deadline",
-            data={"order_id": order_id}
+        """התראה על קרבת מועד דיווח על בעיה - עם כפתורי אישור ודיווח"""
+        await NotificationService.notify_report_window_closing(
+            buyer_id=buyer_id,
+            order_id=order_id,
+            hours_left=hours_left
         )
+
+    @staticmethod
+    async def notify_report_window_closing(buyer_id: int, order_id: str, hours_left: int):
+        """התראה 2 שעות לפני סגירת חלון דיווח - עם כפתורי אישור ודיווח"""
+        try:
+            from telegram import Bot
+            from keyboards import Keyboards
+            bot = Bot(Config.BOT_TOKEN)
+
+            # קבלת פרטי ההזמנה
+            from bson import ObjectId
+            order = await db.orders.find_one({"_id": ObjectId(order_id)})
+            coupon_title = "הקופון"
+            if order:
+                coupon = await db.coupons.find_one({"_id": order.get("coupon_id")})
+                if coupon:
+                    coupon_title = coupon.get("title", "הקופון")
+
+            title = f"⚠️ נותרו {hours_left} שעות לדיווח על בעיה"
+            message = (
+                f"חלון הדיווח על '{coupon_title}' עומד להיסגר!\n\n"
+                f"🕐 נותרו לך {hours_left} שעות לדווח על בעיה.\n"
+                f"לאחר מכן, העסקה תושלם אוטומטית.\n\n"
+                f"✅ אם הקופון תקין - לחץ 'אשר קופון'\n"
+                f"🚨 אם יש בעיה - לחץ 'דווח על בעיה'"
+            )
+
+            # שמירה בDB
+            notification_data = {
+                "user_id": buyer_id,
+                "title": title,
+                "message": message,
+                "type": "report_window_closing",
+                "data": {"order_id": order_id, "hours_left": hours_left},
+                "read": False,
+                "created_at": datetime.utcnow()
+            }
+            await db.notifications.insert_one(notification_data)
+
+            # שליחה עם כפתורים
+            keyboard = Keyboards.report_window_keyboard(order_id)
+            text = f"🔔 *{title}*\n\n{message}"
+            await bot.send_message(buyer_id, text, reply_markup=keyboard, parse_mode="Markdown")
+
+            logger.info(f"Report window closing notification sent to {buyer_id} for order {order_id}")
+
+        except Exception as e:
+            logger.error(f"Error sending report window closing notification: {e}")
 
     @staticmethod
     async def notify_new_message(user_id: int, sender_name: str, chat_id: str):
