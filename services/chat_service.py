@@ -7,6 +7,8 @@ from bson import ObjectId
 from database import db
 from config import Config
 import logging
+import html
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -120,30 +122,47 @@ class ChatService:
         seller_name = ChatService._user_display_name_from_doc(seller_doc, f"{seller_id}")
         sender_name = ChatService._user_display_name_from_doc(sender_doc, str(sender_id))
 
-        # Use Markdown safely
-        try:
-            from telegram.helpers import escape_markdown
-            md = lambda s: escape_markdown("" if s is None else str(s), version=1)
-        except Exception:
-            md = lambda s: "" if s is None else str(s)
+        # Render in HTML to reliably support <pre><code class="language-...">...</code></pre>
+        # (Markdown escaping breaks fenced code blocks and removes syntax highlighting + language label).
+        safe_buyer_name = html.escape("" if buyer_name is None else str(buyer_name))
+        safe_seller_name = html.escape("" if seller_name is None else str(seller_name))
+        safe_sender_name = html.escape("" if sender_name is None else str(sender_name))
+        safe_sender_role = html.escape("" if sender_role is None else str(sender_role))
+        safe_chat_id_short = html.escape(str(chat_doc.get("_id"))[:24])
 
-        text = (
-            f"💬 *שיחה:* {md(buyer_name)} ↔ {md(seller_name)}\n"
-            f"👤 *שולח:* {md(sender_name)} ({md(sender_role)})\n"
-            f"🆔 *Chat:* `{md(str(chat_doc.get('_id'))[:24])}`\n\n"
-            f"{md(message_text)}"
+        header = (
+            f"💬 <b>שיחה:</b> {safe_buyer_name} ↔ {safe_seller_name}\n"
+            f"👤 <b>שולח:</b> {safe_sender_name} ({safe_sender_role})\n"
+            f"🆔 <b>Chat:</b> <code>{safe_chat_id_short}</code>\n\n"
         )
+
+        body = "" if message_text is None else str(message_text)
+        # If the message already contains a fenced code block (```lang ... ```), preserve it as a highlighted code block.
+        m = re.match(r"(?s)^\s*```([a-zA-Z0-9_+-]+)?\r?\n(.*?)\r?\n```\s*$", body)
+        if m:
+            lang = (m.group(1) or "").strip()
+            code = m.group(2) or ""
+            safe_code = html.escape(code)
+            if lang:
+                safe_lang = html.escape(lang)
+                rendered_body = f'<pre><code class="language-{safe_lang}">{safe_code}</code></pre>'
+            else:
+                rendered_body = f"<pre><code>{safe_code}</code></pre>"
+        else:
+            rendered_body = html.escape(body)
+
+        text = header + rendered_body
 
         try:
             await bot.send_message(
                 chat_id=admin_forum_chat_id,
                 message_thread_id=topic_id,
                 text=text,
-                parse_mode="Markdown",
+                parse_mode="HTML",
             )
         except TypeError:
             # Backward compatibility: if message_thread_id is unsupported, fall back to the main forum chat
-            await bot.send_message(chat_id=admin_forum_chat_id, text=text, parse_mode="Markdown")
+            await bot.send_message(chat_id=admin_forum_chat_id, text=text, parse_mode="HTML")
         except Exception as e:
             logger.warning(f"Failed to mirror chat message to admin forum: {e}")
 
