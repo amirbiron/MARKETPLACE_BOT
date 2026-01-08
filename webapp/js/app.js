@@ -16,7 +16,10 @@ if (tg) {
   tg.setBackgroundColor('#183018');
 }
 
-// Sample Product Data (in production, this would come from API)
+// API mode flag - set to true when API is available
+const USE_API = typeof api !== 'undefined';
+
+// Sample Product Data (fallback when API is not available)
 const sampleProducts = [
   {
     id: 1,
@@ -219,35 +222,41 @@ function filterByCategory(category) {
  * Apply all active filters
  */
 function applyFilters() {
-  let filteredProducts = [...sampleProducts];
-  
-  // Filter by category
-  if (currentCategory !== 'all') {
-    const categoryMap = {
-      'food': 'food',
-      'fashion': 'fashion',
-      'electronics': 'electronics',
-      'beauty': 'beauty',
-      'entertainment': 'entertainment'
-    };
-    filteredProducts = filteredProducts.filter(p => p.category === currentCategory);
+  if (USE_API) {
+    // When using API, reload products with new filters
+    loadProducts();
+  } else {
+    // When using sample data, filter locally
+    let filteredProducts = [...sampleProducts];
+    
+    // Filter by category
+    if (currentCategory !== 'all') {
+      const categoryMap = {
+        'food': 'food',
+        'fashion': 'fashion',
+        'electronics': 'electronics',
+        'beauty': 'beauty',
+        'entertainment': 'entertainment'
+      };
+      filteredProducts = filteredProducts.filter(p => p.category === currentCategory);
+    }
+    
+    // Apply sort/filter
+    switch (currentFilter) {
+      case 'sale':
+        filteredProducts.sort((a, b) => b.discount - a.discount);
+        break;
+      case 'new':
+        // In production, sort by date
+        filteredProducts.reverse();
+        break;
+      case 'popular':
+        filteredProducts.sort((a, b) => b.reviews - a.reviews);
+        break;
+    }
+    
+    renderProducts(filteredProducts);
   }
-  
-  // Apply sort/filter
-  switch (currentFilter) {
-    case 'sale':
-      filteredProducts.sort((a, b) => b.discount - a.discount);
-      break;
-    case 'new':
-      // In production, sort by date
-      filteredProducts.reverse();
-      break;
-    case 'popular':
-      filteredProducts.sort((a, b) => b.reviews - a.reviews);
-      break;
-  }
-  
-  renderProducts(filteredProducts);
 }
 
 /**
@@ -363,15 +372,115 @@ function initFilters() {
 }
 
 /**
+ * Load products from API or use sample data
+ */
+async function loadProducts() {
+  if (USE_API) {
+    try {
+      showLoading();
+      const params = {
+        page: 0,
+        limit: 20
+      };
+      
+      if (currentCategory !== 'all') {
+        params.category = currentCategory;
+      }
+      
+      if (currentFilter === 'sale') {
+        params.sort = 'discount';
+      } else if (currentFilter === 'new') {
+        params.sort = 'created_at';
+      } else if (currentFilter === 'popular') {
+        params.sort = 'popular';
+      }
+      
+      const response = await api.getCoupons(params);
+      
+      // Transform API data to match our format
+      const products = response.coupons.map(coupon => ({
+        id: coupon.id,
+        name: coupon.title,
+        business: coupon.seller_name,
+        price: coupon.sale_price,
+        originalPrice: coupon.original_price,
+        discount: coupon.discount,
+        image: `https://via.placeholder.com/400x400/1E3728/30F078?text=${encodeURIComponent(coupon.title.substring(0, 10))}`,
+        rating: coupon.seller_rating || 4.5,
+        reviews: 0,
+        isFavorite: false,
+        category: coupon.category
+      }));
+      
+      hideLoading();
+      renderProducts(products);
+      
+    } catch (error) {
+      console.error('Failed to load from API, using sample data:', error);
+      hideLoading();
+      renderProducts(sampleProducts);
+    }
+  } else {
+    renderProducts(sampleProducts);
+  }
+}
+
+/**
+ * Show loading state
+ */
+function showLoading() {
+  if (!productGrid) return;
+  
+  productGrid.innerHTML = `
+    <div class="product-card">
+      <div class="skeleton skeleton--image"></div>
+      <div style="padding: var(--spacing-md);">
+        <div class="skeleton skeleton--text"></div>
+        <div class="skeleton skeleton--text-sm"></div>
+      </div>
+    </div>
+    <div class="product-card">
+      <div class="skeleton skeleton--image"></div>
+      <div style="padding: var(--spacing-md);">
+        <div class="skeleton skeleton--text"></div>
+        <div class="skeleton skeleton--text-sm"></div>
+      </div>
+    </div>
+    <div class="product-card">
+      <div class="skeleton skeleton--image"></div>
+      <div style="padding: var(--spacing-md);">
+        <div class="skeleton skeleton--text"></div>
+        <div class="skeleton skeleton--text-sm"></div>
+      </div>
+    </div>
+    <div class="product-card">
+      <div class="skeleton skeleton--image"></div>
+      <div style="padding: var(--spacing-md);">
+        <div class="skeleton skeleton--text"></div>
+        <div class="skeleton skeleton--text-sm"></div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Hide loading state
+ */
+function hideLoading() {
+  // Loading will be replaced by actual content
+}
+
+/**
  * Initialize the application
  */
 function init() {
   initTabs();
   initFilters();
-  renderProducts(sampleProducts);
+  loadProducts();
   
   console.log('🛒 Coupon Marketplace initialized');
   console.log('Telegram WebApp:', tg ? 'Connected' : 'Not available');
+  console.log('API Mode:', USE_API ? 'Enabled' : 'Demo Mode');
 }
 
 // Start the app when DOM is ready

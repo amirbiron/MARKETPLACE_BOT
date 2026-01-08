@@ -41,20 +41,29 @@ webapp/
 
 ## 🚀 הרצה מקומית
 
-### אפשרות 1: Python HTTP Server
+### אפשרות 1: מצב Demo (ללא API)
 ```bash
 cd webapp
 python3 -m http.server 8000
 ```
 ואז פתח: http://localhost:8000
 
-### אפשרות 2: Node.js HTTP Server
+> ⚠️ במצב זה מוצגים נתוני דוגמה בלבד
+
+### אפשרות 2: עם API Server (מסונכרן עם הבוט)
 ```bash
-npx serve webapp
+# התקנת dependencies
+pip install -r requirements.txt
+
+# הרצת ה-API server
+python webapp_api.py
 ```
+ואז פתח: http://localhost:8080
+
+> ✅ במצב זה הנתונים מגיעים מ-MongoDB
 
 ### אפשרות 3: Live Server (VS Code Extension)
-פתח את `index.html` ולחץ "Go Live"
+פתח את `index.html` ולחץ "Go Live" (מצב Demo)
 
 ## 📱 Telegram Mini App Integration
 
