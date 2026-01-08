@@ -12,8 +12,10 @@ python-dotenv==1.0.0
 asyncio==3.4.3
 aiohttp==3.9.1
 
-# Health check server (Render)
+# Health check server (Render) and Web App API
 Flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
 
 # Date/Time Utilities
 python-dateutil==2.8.2

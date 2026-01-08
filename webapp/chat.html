@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0F2314">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
+  <title>צ'אט - שוק הקופונים</title>
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  
+  <!-- Google Fonts - Heebo for Hebrew -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Telegram Web App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="chat-page">
+  <!-- Chat Header -->
+  <header class="chat-header">
+    <button class="chat-header__back" aria-label="חזור" onclick="history.back()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+    <div class="chat-header__info">
+      <h1 class="chat-header__name">מוכר: קפה שוק</h1>
+      <p class="chat-header__status">מחובר • זמן תגובה ממוצע: 5 דקות</p>
+    </div>
+    <div class="chat-header__actions">
+      <button class="icon-btn" aria-label="מידע נוסף">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+  
+  <!-- Privacy Notice -->
+  <div class="chat-notice">
+    <div class="chat-notice__icon">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+      </svg>
+    </div>
+    <p class="chat-notice__text">
+      הצ'אט אנונימי לחלוטין 🔒<br>
+      המוכר לא רואה את הפרטים האישיים שלך. התשלום מוגן בנאמנות עד לאישור קבלת המוצר.
+    </p>
+  </div>
+  
+  <!-- Chat Messages -->
+  <div class="chat-messages" id="chatMessages">
+    <!-- Seller Message -->
+    <div class="message message--seller">
+      <div class="message__bubble">
+        <p class="message__text">היי! ראיתי שהתעניינת בקופון שלנו. איך אני יכול לעזור? 😊</p>
+        <div class="message__meta">
+          <span class="message__time">10:30</span>
+          <span class="message__status">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Buyer Message -->
+    <div class="message message--buyer">
+      <div class="message__bubble">
+        <p class="message__text">היי, רציתי לשאול אם הקופון עדיין תקף? ומה בדיוק כולל?</p>
+        <div class="message__meta">
+          <span class="message__time">10:32</span>
+          <span class="message__status">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Seller Message -->
+    <div class="message message--seller">
+      <div class="message__bubble">
+        <p class="message__text">כן, הקופון בתוקף עד סוף החודש! הוא כולל ארוחת בוקר זוגית + שתי כוסות קפה. שווה 150₪ ואני מוכר ב-89₪ בלבד 🎉</p>
+        <div class="message__meta">
+          <span class="message__time">10:33</span>
+          <span class="message__status">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- System Message -->
+    <div class="message message--system">
+      <div class="message__bubble">
+        <p class="message__text">🛡️ מנהל מערכת הצטרף לשיחה</p>
+      </div>
+    </div>
+    
+    <!-- Admin Message -->
+    <div class="message message--admin">
+      <div class="message__bubble">
+        <p class="message__label">👤 צוות תמיכה</p>
+        <p class="message__text">היי, אני כאן אם צריכים עזרה עם העסקה. אל תהססו לפנות 👋</p>
+        <div class="message__meta">
+          <span class="message__time">10:35</span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Buyer Message -->
+    <div class="message message--buyer">
+      <div class="message__bubble">
+        <p class="message__text">מעולה! אני רוצה לקנות. איך מתקדמים?</p>
+        <div class="message__meta">
+          <span class="message__time">10:36</span>
+          <span class="message__status">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Seller Message -->
+    <div class="message message--seller">
+      <div class="message__bubble">
+        <p class="message__text">פשוט לחץ על כפתור "קנה עכשיו" למטה והתשלום יעבור לנאמנות. ברגע שתאשר שקיבלת את הקופון, הכסף יועבר אליי. ככה שניהם מוגנים! ✅</p>
+        <div class="message__meta">
+          <span class="message__time">10:37</span>
+          <span class="message__status">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+            </svg>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Chat Input -->
+  <div class="chat-input-container">
+    <button class="chat-input__btn" aria-label="העלאת קובץ">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+      </svg>
+    </button>
+    <button class="chat-input__btn" aria-label="אימוג'י">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
+    <input 
+      type="text" 
+      class="chat-input__field" 
+      placeholder="כתוב הודעה..." 
+      id="messageInput"
+    >
+    <button class="chat-input__send" aria-label="שלח" id="sendBtn">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+      </svg>
+    </button>
+  </div>
+  
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <a href="index.html" class="nav-item">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
+      </svg>
+      <span class="nav-item__label">שוק</span>
+    </a>
+    <a href="#search" class="nav-item">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <span class="nav-item__label">חיפוש</span>
+    </a>
+    <a href="#wallet" class="nav-item">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+      </svg>
+      <span class="nav-item__label">ארנק</span>
+      <span class="nav-item__badge">3</span>
+    </a>
+    <a href="#profile" class="nav-item">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+      <span class="nav-item__label">פרופיל</span>
+    </a>
+  </nav>
+  
+  <!-- JavaScript -->
+  <script src="js/chat.js"></script>
+</body>
+</html>
