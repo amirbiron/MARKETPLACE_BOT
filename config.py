@@ -64,6 +64,33 @@ class Config:
     BANK_ACCOUNT: str = os.getenv("BANK_ACCOUNT", "")  # מספר חשבון
     BANK_OWNER: str = os.getenv("BANK_OWNER", "")  # שם בעל החשבון
     
+    # === Anti-Fraud Settings ===
+    
+    # Trust Score Thresholds
+    FRAUD_LOW_TRUST_SCORE_THRESHOLD: int = 20  # ניקוד אמינות מתחתיו נדלקת התראה
+    
+    # Dispute/Refund Rate Thresholds
+    FRAUD_HIGH_DISPUTE_RATE_THRESHOLD: float = 20.0  # אחוז מחלוקות שמעליו זה חשוד
+    FRAUD_HIGH_REFUND_RATE_THRESHOLD: float = 30.0  # אחוז החזרים חריג (כקונה)
+    FRAUD_MIN_ORDERS_FOR_DISPUTE_CHECK: int = 5  # מינימום הזמנות לבדיקת אחוז מחלוקות
+    FRAUD_MIN_ORDERS_FOR_REFUND_CHECK: int = 5  # מינימום רכישות לבדיקת אחוז החזרים
+    
+    # Rapid Activity Thresholds (per hour)
+    FRAUD_RAPID_SALES_THRESHOLD: int = 20  # מכירות לשעה
+    FRAUD_RAPID_COUPONS_THRESHOLD: int = 15  # קופונים חדשים לשעה
+    FRAUD_RAPID_PURCHASES_THRESHOLD: int = 10  # רכישות לשעה
+    
+    # Pricing Thresholds
+    FRAUD_MAX_DISCOUNT_PERCENTAGE: float = 90.0  # הנחה מקסימלית לפני התראה
+    FRAUD_MIN_SALE_PRICE: float = 5.0  # מחיר מינימלי לקופון
+    
+    # Large Transaction Threshold
+    FRAUD_LARGE_TRANSACTION_THRESHOLD: float = 500.0  # עסקה שדורשת אימות נוסף
+    
+    # New Seller Limits
+    FRAUD_NEW_SELLER_DAYS: int = 30  # ימים שמוכר נחשב "חדש"
+    FRAUD_NEW_SELLER_DAILY_LIMIT: int = 5  # הגבלת קופונים יומית למוכר חדש
+    
     @classmethod
     def validate(cls) -> bool:
         """בדיקת תקינות ההגדרות"""

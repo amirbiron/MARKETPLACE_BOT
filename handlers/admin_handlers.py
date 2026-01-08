@@ -7,6 +7,7 @@ from bson import ObjectId
 from services.user_service import UserService
 from services.coupon_service import CouponService
 from services.order_service import OrderService
+from services.fraud_detection_service import FraudDetectionService, FraudEventType, FraudRiskLevel
 from keyboards import Keyboards
 from utils import format_price, format_datetime
 from config import Config
@@ -1016,3 +1017,528 @@ User ID: `{seller.user_id}`
         
         context.user_data.pop("msg_user_id", None)
         return ConversationHandler.END
+
+    # ==================== Fraud Management Handlers ====================
+
+    @staticmethod
+    async def fraud_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """תפריט ניהול הונאות"""
+        query = update.callback_query
+        if query:
+            await query.answer()
+        
+        user_id = update.effective_user.id
+        if not await UserService.is_admin(user_id):
+            if query:
+                await query.edit_message_text("❌ אין לך הרשאות אדמין.")
+            else:
+                await update.message.reply_text("❌ אין לך הרשאות אדמין.")
+            return
+        
+        # קבלת סטטיסטיקות מהירות
+        stats = await FraudDetectionService.get_fraud_stats()
+        
+        text = f"""
+🛡️ *ניהול הונאות (Anti-Fraud)*
+
+📊 *סטטיסטיקות מהירות:*
+📋 סה"כ אירועים: {stats.get('total_events', 0)}
+⏳ ממתינים לבדיקה: {stats.get('unreviewed_events', 0)}
+🚫 משתמשים חסומים: {stats.get('blocked_users', 0)}
+⚡ אירועים ב-24 שעות: {stats.get('recent_events_24h', 0)}
+
+בחר פעולה:
+"""
+        
+        keyboard = Keyboards.fraud_management_keyboard()
+        
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_pending_events(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת אירועי הונאה ממתינים לבדיקה"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        if not await UserService.is_admin(user_id):
+            await query.edit_message_text("❌ אין לך הרשאות.")
+            return
+        
+        pending = await FraudDetectionService.get_pending_reviews(limit=10)
+        
+        if not pending:
+            await query.edit_message_text(
+                "✅ אין אירועי הונאה ממתינים לבדיקה!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")
+                ]])
+            )
+            return
+        
+        text = f"🚨 *אירועי הונאה ממתינים ({len(pending)}):*\n\n"
+        
+        keyboard = []
+        for event in pending:
+            risk_emoji = {
+                "critical": "🔴",
+                "high": "🟠", 
+                "medium": "🟡",
+                "low": "🟢"
+            }.get(event.get("risk_level", "low"), "⚪")
+            
+            event_type_names = {
+                "duplicate_coupon": "קופון כפול",
+                "high_dispute_rate": "מחלוקות גבוהות",
+                "high_refund_rate": "החזרים גבוהים",
+                "suspicious_pricing": "מחיר חשוד",
+                "rapid_activity": "פעילות מהירה",
+                "auto_block": "חסימה אוטומטית",
+                "low_trust_score": "ניקוד נמוך",
+                "large_transaction": "עסקה גדולה",
+                "new_seller_limit": "הגבלת מוכר חדש"
+            }
+            
+            event_name = event_type_names.get(event.get("event_type", ""), event.get("event_type", "לא ידוע"))
+            user_id_event = event.get("user_id", 0)
+            
+            keyboard.append([InlineKeyboardButton(
+                f"{risk_emoji} {event_name} | User: {user_id_event}",
+                callback_data=f"fraud_event_{str(event['_id'])}"
+            )])
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")])
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+
+    @staticmethod
+    async def fraud_view_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """צפייה באירוע הונאה בודד"""
+        query = update.callback_query
+        await query.answer()
+        
+        log_id = query.data.replace("fraud_event_", "")
+        
+        await database._ensure_connected()
+        fraud_logs = database.db.fraud_logs
+        
+        event = await fraud_logs.find_one({"_id": ObjectId(log_id)})
+        
+        if not event:
+            await query.edit_message_text(
+                "❌ האירוע לא נמצא",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="fraud_pending_events")
+                ]])
+            )
+            return
+        
+        risk_emoji = {
+            "critical": "🔴 קריטי",
+            "high": "🟠 גבוה",
+            "medium": "🟡 בינוני",
+            "low": "🟢 נמוך"
+        }.get(event.get("risk_level", "low"), "⚪ לא ידוע")
+        
+        event_type_names = {
+            "duplicate_coupon": "קופון כפול",
+            "high_dispute_rate": "אחוז מחלוקות גבוה",
+            "high_refund_rate": "אחוז החזרים גבוה",
+            "suspicious_pricing": "מחיר חשוד",
+            "rapid_activity": "פעילות מהירה מדי",
+            "auto_block": "חסימה אוטומטית",
+            "low_trust_score": "ניקוד אמינות נמוך",
+            "large_transaction": "עסקה גדולה",
+            "new_seller_limit": "הגבלת מוכר חדש"
+        }
+        
+        event_name = event_type_names.get(event.get("event_type", ""), event.get("event_type", "לא ידוע"))
+        event_user_id = event.get("user_id", 0)
+        
+        # קבלת פרטי המשתמש
+        user = await UserService.get_user(event_user_id)
+        user_name = user.first_name if user else "לא ידוע"
+        user_role = user.role.value if user else "לא ידוע"
+        
+        # פירוט האירוע
+        details = event.get("details", {})
+        details_text = ""
+        for key, value in details.items():
+            details_text += f"  • {key}: {value}\n"
+        
+        text = f"""
+🚨 *פרטי אירוע הונאה*
+
+📋 *סוג:* {event_name}
+⚠️ *רמת סיכון:* {risk_emoji}
+
+👤 *משתמש:*
+  • ID: `{event_user_id}`
+  • שם: {user_name}
+  • תפקיד: {user_role}
+
+📝 *פרטים:*
+{details_text or "  אין פרטים נוספים"}
+
+📅 *תאריך:* {event.get('created_at', datetime.utcnow()).strftime('%d/%m/%Y %H:%M')}
+✅ *נבדק:* {'כן' if event.get('reviewed') else 'לא'}
+"""
+        
+        keyboard = Keyboards.fraud_event_keyboard(log_id, event_user_id)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_mark_reviewed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """סימון אירוע כנבדק"""
+        query = update.callback_query
+        await query.answer()
+        
+        admin_id = update.effective_user.id
+        log_id = query.data.replace("fraud_mark_reviewed_", "")
+        
+        success = await FraudDetectionService.mark_as_reviewed(log_id, admin_id)
+        
+        if success:
+            await query.edit_message_text(
+                "✅ האירוע סומן כנבדק!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה לרשימה", callback_data="fraud_pending_events")
+                ]])
+            )
+        else:
+            await query.edit_message_text(
+                "❌ הסימון נכשל",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="fraud_pending_events")
+                ]])
+            )
+
+    @staticmethod
+    async def fraud_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת סטטיסטיקות הונאה מפורטות"""
+        query = update.callback_query
+        await query.answer()
+        
+        stats = await FraudDetectionService.get_fraud_stats()
+        
+        # סוגי אירועים
+        events_by_type = stats.get("events_by_type", {})
+        type_names = {
+            "duplicate_coupon": "קופון כפול",
+            "high_dispute_rate": "מחלוקות גבוהות",
+            "high_refund_rate": "החזרים גבוהים",
+            "suspicious_pricing": "מחיר חשוד",
+            "rapid_activity": "פעילות מהירה",
+            "auto_block": "חסימה אוטומטית",
+            "low_trust_score": "ניקוד נמוך",
+            "large_transaction": "עסקה גדולה",
+            "new_seller_limit": "הגבלת מוכר חדש"
+        }
+        
+        types_text = ""
+        for event_type, count in events_by_type.items():
+            name = type_names.get(event_type, event_type)
+            types_text += f"  • {name}: {count}\n"
+        
+        # רמות סיכון
+        events_by_risk = stats.get("events_by_risk", {})
+        risk_emojis = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
+        
+        risk_text = ""
+        for risk_level, count in events_by_risk.items():
+            emoji = risk_emojis.get(risk_level, "⚪")
+            risk_text += f"  {emoji} {risk_level}: {count}\n"
+        
+        text = f"""
+📊 *סטטיסטיקות הונאה מפורטות*
+
+📋 *כללי:*
+  • סה"כ אירועים: {stats.get('total_events', 0)}
+  • ממתינים לבדיקה: {stats.get('unreviewed_events', 0)}
+  • משתמשים חסומים (אוטומטית): {stats.get('blocked_users', 0)}
+  • אירועים ב-24 שעות: {stats.get('recent_events_24h', 0)}
+
+📈 *לפי סוג אירוע:*
+{types_text or "  אין נתונים"}
+
+⚠️ *לפי רמת סיכון:*
+{risk_text or "  אין נתונים"}
+"""
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_blocked_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת רשימת משתמשים חסומים"""
+        query = update.callback_query
+        await query.answer()
+        
+        blocked = await UserService.get_blocked_users(limit=20)
+        
+        if not blocked:
+            await query.edit_message_text(
+                "✅ אין משתמשים חסומים!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")
+                ]])
+            )
+            return
+        
+        text = f"🚫 *משתמשים חסומים ({len(blocked)}):*\n\n"
+        
+        users_list = []
+        for user_data in blocked:
+            name = user_data.get("first_name") or user_data.get("username") or str(user_data.get("user_id"))
+            user_id = user_data.get("user_id")
+            auto = "🤖" if user_data.get("auto_blocked") else "👤"
+            
+            text += f"{auto} {name} (ID: `{user_id}`)\n"
+            users_list.append((f"{auto} {name}", user_id))
+        
+        keyboard = Keyboards.fraud_blocked_users_keyboard(users_list[:10], 0, (len(users_list) + 9) // 10)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_view_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """צפייה בפרטי משתמש מפאנל הונאות"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_view_user_", ""))
+        user = await UserService.get_user(user_id)
+        
+        if not user:
+            await query.edit_message_text(
+                "❌ המשתמש לא נמצא",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")
+                ]])
+            )
+            return
+        
+        # ניקוד אמינות
+        trust_score = await FraudDetectionService.get_trust_score(user_id)
+        trust_display = Keyboards.trust_score_display(trust_score)
+        
+        # ספירת אירועי הונאה
+        fraud_history = await FraudDetectionService.get_user_fraud_history(user_id)
+        
+        is_blocked = getattr(user, 'blocked', False) or user.__dict__.get('blocked', False)
+        blocked_status = "🚫 חסום" if is_blocked else "✅ פעיל"
+        
+        users_col = await database.get_users_collection()
+        user_data = await users_col.find_one({"user_id": user_id})
+        is_blocked = user_data.get("blocked", False) if user_data else False
+        
+        text = f"""
+👤 *פרטי משתמש - פאנל הונאות*
+
+🆔 ID: `{user.user_id}`
+📛 שם: {user.first_name or 'לא מוגדר'}
+👤 Username: @{user.username or 'לא מוגדר'}
+
+📋 תפקיד: {user.role.value}
+📊 סטטוס: {blocked_status}
+
+🛡️ *ניקוד אמינות:*
+{trust_display}
+
+📈 *היסטוריית הונאה:*
+  • סה"כ אירועים: {len(fraud_history)}
+
+💰 יתרה: {format_price(user.balance)}
+⭐ דירוג: {user.rating_average:.1f} ({user.rating_count} דירוגים)
+"""
+        
+        keyboard = Keyboards.fraud_user_actions_keyboard(user_id, is_blocked)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_user_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת היסטוריית הונאה של משתמש"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_user_history_", ""))
+        history = await FraudDetectionService.get_user_fraud_history(user_id)
+        
+        if not history:
+            await query.edit_message_text(
+                f"✅ אין היסטוריית הונאה למשתמש {user_id}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
+                ]])
+            )
+            return
+        
+        text = f"📋 *היסטוריית הונאה - משתמש {user_id}*\n\n"
+        
+        type_names = {
+            "duplicate_coupon": "קופון כפול",
+            "high_dispute_rate": "מחלוקות",
+            "high_refund_rate": "החזרים",
+            "suspicious_pricing": "מחיר חשוד",
+            "rapid_activity": "פעילות מהירה",
+            "auto_block": "חסימה אוטו'",
+            "low_trust_score": "ניקוד נמוך"
+        }
+        
+        risk_emojis = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}
+        
+        for event in history[:15]:
+            event_type = type_names.get(event.get("event_type", ""), event.get("event_type", ""))
+            risk_emoji = risk_emojis.get(event.get("risk_level", "low"), "⚪")
+            date = event.get("created_at", datetime.utcnow()).strftime("%d/%m %H:%M")
+            reviewed = "✅" if event.get("reviewed") else "⏳"
+            
+            text += f"{risk_emoji} {event_type} | {date} {reviewed}\n"
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @staticmethod
+    async def fraud_block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """חסימת משתמש מפאנל הונאות"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_block_user_", ""))
+        admin_id = update.effective_user.id
+        
+        success = await UserService.block_user(user_id, reason="חסימה ידנית מפאנל הונאות", auto=False)
+        
+        if success:
+            # לוג האירוע
+            await FraudDetectionService.log_fraud_event(
+                user_id=user_id,
+                event_type=FraudEventType.MANUAL_REVIEW,
+                details={"action": "manual_block", "admin_id": admin_id},
+                risk_level=FraudRiskLevel.HIGH
+            )
+            
+            # הודעה למשתמש
+            try:
+                await context.bot.send_message(
+                    user_id,
+                    "🚫 חשבונך נחסם.\nלפרטים נוספים פנה לתמיכה."
+                )
+            except:
+                pass
+            
+            await query.edit_message_text(
+                f"✅ משתמש {user_id} נחסם בהצלחה!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
+                ]])
+            )
+        else:
+            await query.edit_message_text("❌ החסימה נכשלה")
+
+    @staticmethod
+    async def fraud_unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """ביטול חסימת משתמש"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_unblock_", ""))
+        
+        success = await UserService.unblock_user(user_id)
+        
+        if success:
+            # הודעה למשתמש
+            try:
+                await context.bot.send_message(
+                    user_id,
+                    "✅ החסימה על חשבונך הוסרה.\nברוך הבא בחזרה!"
+                )
+            except:
+                pass
+            
+            await query.edit_message_text(
+                f"✅ החסימה על משתמש {user_id} הוסרה!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
+                ]])
+            )
+        else:
+            await query.edit_message_text("❌ ביטול החסימה נכשל")
+
+    @staticmethod
+    async def fraud_keep_blocked(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """אישור שהמשתמש יישאר חסום"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_keep_blocked_", ""))
+        admin_id = update.effective_user.id
+        
+        # לוג שהאדמין בדק ואישר
+        await FraudDetectionService.log_fraud_event(
+            user_id=user_id,
+            event_type=FraudEventType.MANUAL_REVIEW,
+            details={"action": "confirmed_block", "admin_id": admin_id},
+            risk_level=FraudRiskLevel.HIGH
+        )
+        
+        await query.edit_message_text(
+            f"✅ אושר - משתמש {user_id} יישאר חסום",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")
+            ]])
+        )
+
+    @staticmethod
+    async def fraud_warn_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """שליחת אזהרה למשתמש"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_warn_user_", ""))
+        
+        try:
+            await context.bot.send_message(
+                user_id,
+                "⚠️ *אזהרה מהמערכת*\n\n"
+                "זיהינו פעילות חשודה בחשבונך.\n"
+                "אנא וודא שפעילותך תואמת את התקנון.\n"
+                "המשך פעילות חשודה עלול לגרום לחסימת חשבונך.",
+                parse_mode="Markdown"
+            )
+            
+            await query.edit_message_text(
+                f"✅ נשלחה אזהרה למשתמש {user_id}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
+                ]])
+            )
+        except Exception as e:
+            await query.edit_message_text(f"❌ השליחה נכשלה: {str(e)}")
+
+    @staticmethod
+    async def fraud_calc_trust(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """חישוב מחדש של ניקוד אמינות"""
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = int(query.data.replace("fraud_calc_trust_", ""))
+        
+        new_score = await FraudDetectionService.calculate_trust_score(user_id)
+        trust_display = Keyboards.trust_score_display(new_score)
+        
+        await query.edit_message_text(
+            f"🛡️ *ניקוד אמינות מעודכן*\n\n"
+            f"משתמש: `{user_id}`\n\n"
+            f"{trust_display}",
+            parse_mode="Markdown",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔙 חזרה", callback_data=f"fraud_view_user_{user_id}")
+            ]])
+        )

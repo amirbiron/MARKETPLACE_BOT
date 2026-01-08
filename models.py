@@ -56,6 +56,29 @@ class PayoutStatus(str, Enum):
     COMPLETED = "completed"
 
 
+class FraudEventType(str, Enum):
+    """סוגי אירועי הונאה"""
+    DUPLICATE_COUPON = "duplicate_coupon"  # קופון כפול
+    HIGH_DISPUTE_RATE = "high_dispute_rate"  # אחוז מחלוקות גבוה
+    HIGH_REFUND_RATE = "high_refund_rate"  # אחוז החזרים חריג
+    SUSPICIOUS_PRICING = "suspicious_pricing"  # מחיר חשוד
+    RAPID_ACTIVITY = "rapid_activity"  # פעילות מהירה מדי
+    AUTO_BLOCK = "auto_block"  # חסימה אוטומטית
+    MANUAL_REVIEW = "manual_review"  # סימון לבדיקה ידנית
+    LARGE_TRANSACTION = "large_transaction"  # עסקה גדולה
+    NEW_SELLER_LIMIT = "new_seller_limit"  # הגבלת מוכר חדש
+    LOW_TRUST_SCORE = "low_trust_score"  # ניקוד אמינות נמוך
+    SUSPICIOUS_PATTERN = "suspicious_pattern"  # דפוס חשוד כללי
+
+
+class FraudRiskLevel(str, Enum):
+    """רמות סיכון הונאה"""
+    LOW = "low"  # נמוך
+    MEDIUM = "medium"  # בינוני
+    HIGH = "high"  # גבוה
+    CRITICAL = "critical"  # קריטי
+
+
 class User:
     """מודל משתמש"""
     
@@ -484,4 +507,65 @@ class Payout:
             created_at=data.get("created_at"),
             processed_at=data.get("processed_at"),
             admin_notes=data.get("admin_notes"),
+        )
+
+
+class FraudLog:
+    """מודל לוג אירועי הונאה"""
+    
+    def __init__(
+        self,
+        user_id: int,
+        event_type: FraudEventType,
+        risk_level: FraudRiskLevel = FraudRiskLevel.LOW,
+        details: Optional[Dict[str, Any]] = None,
+        reviewed: bool = False,
+        reviewed_by: Optional[int] = None,
+        reviewed_at: Optional[datetime] = None,
+        review_notes: Optional[str] = None,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.user_id = user_id
+        self.event_type = event_type
+        self.risk_level = risk_level
+        self.details = details or {}
+        self.reviewed = reviewed
+        self.reviewed_by = reviewed_by
+        self.reviewed_at = reviewed_at
+        self.review_notes = review_notes
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "user_id": self.user_id,
+            "event_type": self.event_type.value if isinstance(self.event_type, Enum) else self.event_type,
+            "risk_level": self.risk_level.value if isinstance(self.risk_level, Enum) else self.risk_level,
+            "details": self.details,
+            "reviewed": self.reviewed,
+            "reviewed_by": self.reviewed_by,
+            "reviewed_at": self.reviewed_at,
+            "review_notes": self.review_notes,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "FraudLog":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            user_id=data["user_id"],
+            event_type=FraudEventType(data.get("event_type", "suspicious_pattern")),
+            risk_level=FraudRiskLevel(data.get("risk_level", "low")),
+            details=data.get("details", {}),
+            reviewed=data.get("reviewed", False),
+            reviewed_by=data.get("reviewed_by"),
+            reviewed_at=data.get("reviewed_at"),
+            review_notes=data.get("review_notes"),
+            created_at=data.get("created_at"),
         )

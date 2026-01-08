@@ -211,6 +211,7 @@ class Keyboards:
             [InlineKeyboardButton("💸 בקשות משיכה", callback_data="admin_payout_requests")],
             [InlineKeyboardButton("💰 בקשות הפקדה", callback_data="admin_deposit_requests")],
             [InlineKeyboardButton("⚖️ מחלוקות פתוחות", callback_data="admin_disputes")],
+            [InlineKeyboardButton("🛡️ ניהול הונאות", callback_data="fraud_menu")],
             [InlineKeyboardButton("📩 פניות תמיכה", callback_data="admin_support_tickets")],
             [InlineKeyboardButton("💵 הוספת יתרה", callback_data="admin_add_balance")],
             [InlineKeyboardButton("📊 סטטיסטיקות", callback_data="admin_stats")],
@@ -352,3 +353,122 @@ class Keyboards:
         keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
 
         return InlineKeyboardMarkup(keyboard)
+
+    # ==================== Anti-Fraud Keyboards ====================
+
+    @staticmethod
+    def fraud_management_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת ניהול הונאות"""
+        keyboard = [
+            [InlineKeyboardButton("🚨 אירועים ממתינים לבדיקה", callback_data="fraud_pending_events")],
+            [InlineKeyboardButton("📊 סטטיסטיקות הונאה", callback_data="fraud_stats")],
+            [InlineKeyboardButton("🚫 משתמשים חסומים", callback_data="fraud_blocked_users")],
+            [InlineKeyboardButton("📋 היסטוריית אירועים", callback_data="fraud_history")],
+            [InlineKeyboardButton("🔙 חזרה לפאנל אדמין", callback_data="admin_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def fraud_alert_keyboard(user_id: int) -> InlineKeyboardMarkup:
+        """מקלדת התראת הונאה - לשימוש בהודעות לאדמינים"""
+        keyboard = [
+            [InlineKeyboardButton("👤 צפה בפרטי משתמש", callback_data=f"fraud_view_user_{user_id}")],
+            [InlineKeyboardButton("📋 היסטוריית הונאה", callback_data=f"fraud_user_history_{user_id}")],
+            [
+                InlineKeyboardButton("✅ בטל חסימה", callback_data=f"fraud_unblock_{user_id}"),
+                InlineKeyboardButton("🚫 החזק חסום", callback_data=f"fraud_keep_blocked_{user_id}")
+            ],
+            [InlineKeyboardButton("🔙 לפאנל הונאות", callback_data="fraud_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def fraud_event_keyboard(log_id: str, user_id: int) -> InlineKeyboardMarkup:
+        """מקלדת לאירוע הונאה בודד"""
+        keyboard = [
+            [InlineKeyboardButton("👤 צפה במשתמש", callback_data=f"fraud_view_user_{user_id}")],
+            [InlineKeyboardButton("✅ סמן כנבדק", callback_data=f"fraud_mark_reviewed_{log_id}")],
+            [
+                InlineKeyboardButton("🚫 חסום משתמש", callback_data=f"fraud_block_user_{user_id}"),
+                InlineKeyboardButton("⚠️ שלח אזהרה", callback_data=f"fraud_warn_user_{user_id}")
+            ],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="fraud_pending_events")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def fraud_user_actions_keyboard(user_id: int, is_blocked: bool = False) -> InlineKeyboardMarkup:
+        """מקלדת פעולות על משתמש מפאנל הונאות"""
+        keyboard = []
+        
+        if is_blocked:
+            keyboard.append([InlineKeyboardButton("✅ בטל חסימה", callback_data=f"fraud_unblock_{user_id}")])
+        else:
+            keyboard.append([InlineKeyboardButton("🚫 חסום משתמש", callback_data=f"fraud_block_user_{user_id}")])
+        
+        keyboard.extend([
+            [InlineKeyboardButton("📋 היסטוריית הונאה", callback_data=f"fraud_user_history_{user_id}")],
+            [InlineKeyboardButton("📊 חשב ניקוד אמינות", callback_data=f"fraud_calc_trust_{user_id}")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")]
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def fraud_blocked_users_keyboard(
+        users: List[Tuple[str, int]],
+        current_page: int,
+        total_pages: int
+    ) -> InlineKeyboardMarkup:
+        """מקלדת רשימת משתמשים חסומים"""
+        keyboard = []
+        
+        # הוספת כל המשתמשים
+        for name, user_id in users:
+            keyboard.append([InlineKeyboardButton(
+                f"🚫 {name}",
+                callback_data=f"fraud_view_user_{user_id}"
+            )])
+        
+        # ניווט בין עמודים
+        if total_pages > 1:
+            nav_row = []
+            if current_page > 0:
+                nav_row.append(InlineKeyboardButton("⬅️ הקודם", callback_data=f"fraud_blocked_page_{current_page-1}"))
+            
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page+1}/{total_pages}", callback_data="ignore"))
+            
+            if current_page < total_pages - 1:
+                nav_row.append(InlineKeyboardButton("הבא ➡️", callback_data=f"fraud_blocked_page_{current_page+1}"))
+            
+            keyboard.append(nav_row)
+        
+        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data="fraud_menu")])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def trust_score_display(score: int) -> str:
+        """המרת ניקוד אמינות לתצוגה גרפית"""
+        if score >= 80:
+            emoji = "🏆"
+            level = "מוכר אמין מאוד"
+        elif score >= 60:
+            emoji = "✅"
+            level = "מוכר אמין"
+        elif score >= 40:
+            emoji = "⚠️"
+            level = "מוכר סביר"
+        elif score >= 20:
+            emoji = "⚡"
+            level = "מוכר חדש"
+        else:
+            emoji = "🔴"
+            level = "דורש תשומת לב"
+        
+        # סרגל התקדמות
+        filled = int(score / 10)
+        empty = 10 - filled
+        bar = "█" * filled + "░" * empty
+        
+        return f"{emoji} {score}/100 - {level}\n[{bar}]"
