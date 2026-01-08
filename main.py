@@ -56,24 +56,24 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     welcome_text = f"""
-🎉 ברוך הבא ל-Marketplace Bot!
+🎉 *ברוך הבא ל-Marketplace Bot!*
 
 👋 שלום {user.first_name}!
 
 זהו מרקטפלייס לקניה ומכירת קופונים וכרטיסים.
 
-📊 התפריט הראשי:
+📊 *התפריט הראשי:*
 🛒 קניית קופונים
 💼 מכירת קופונים (למוכרים)
 📜 ההזמנות שלי
 ⚙️ הגדרות
 📋 תקנון ומדיניות
 
-בחר פעולה מהתפריט למטה:
+בחר פעולה מהכפתורים:
 """
     
     keyboard = Keyboards.main_menu(db_user.role)
-    await update.message.reply_text(welcome_text, reply_markup=keyboard)
+    await update.message.reply_text(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,14 +85,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 👥 כל המשתמשים:
 /start - התחל שימוש בבוט
+/menu - תפריט ראשי
 /buy - קניית קופונים וכרטיסים
 /myorders - צפייה בהזמנות שלי
 /balance - בדיקת יתרה
+/my\\_deposits - ההפקדות שלי
 /rules - תקנון ומדיניות
 /support - פנייה לתמיכה
+/chats - הצ'אטים שלי
 
 💼 מוכרים:
-/register_seller - רישום כמוכר
+/register\\_seller - רישום כמוכר
 /upload - העלאת קופון
 /mysales - המכירות שלי
 /withdraw - בקשת משיכת כספים
@@ -198,11 +201,20 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     keyboard = Keyboards.main_menu(db_user.role)
-    text = "🏠 *תפריט ראשי*\n\nבחר פעולה:"
+    text = "🏠 *תפריט ראשי*\n\nבחר פעולה מהכפתורים:"
 
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        except Exception:
+            # If message can't be edited (e.g., same content), send new message
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text,
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
     else:
         await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
@@ -242,6 +254,231 @@ async def settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+
+
+async def menu_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """טיפול בקולבקים של התפריט הראשי"""
+    from services.user_service import UserService
+    from handlers.payment_handlers import PaymentHandlers
+    from handlers.chat_handlers import ChatHandlers
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    
+    query = update.callback_query
+    action = query.data
+    
+    # קניית קופונים
+    if action == "menu_buy_coupons":
+        await query.answer()
+        return await BuyerHandlers.browse_categories(update, context)
+    
+    # יתרה והטענה
+    if action == "menu_balance":
+        await query.answer()
+        # שליחת הודעה חדשה כי my_balance מצפה להודעה
+        user_id = update.effective_user.id
+        from services.payment_service import PaymentService
+        from services.payout_service import PayoutService
+        from config import Config
+        
+        balance, frozen = await PaymentService.get_user_balance(user_id)
+        
+        text = "💰 *היתרה שלי*\n\n"
+        text += f"💵 יתרה זמינה: {balance:.2f}₪\n"
+        
+        if frozen > 0:
+            text += f"🔒 יתרה קפואה: {frozen:.2f}₪\n"
+            text += f"💎 סה\"כ: {(balance + frozen):.2f}₪\n\n"
+            text += "💡 יתרה קפואה = כסף בהצעות במכרזים\n"
+        else:
+            text += f"\n💡 יתרה קפואה: 0₪\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("➕ הוסף יתרה", callback_data="add_balance")],
+            [InlineKeyboardButton("📊 היסטוריית תנועות", callback_data="transaction_history")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        
+        # אם מוכר - הצג אפשרות משיכה
+        user = await UserService.get_user(user_id)
+        if user and user.role.value in ["seller_verified", "seller_unverified"]:
+            available = await PayoutService.calculate_available_for_payout(user_id)
+            text += f"\n💸 זמין למשיכה: {available:.2f}₪\n"
+            
+            if available >= Config.MIN_PAYOUT_AMOUNT:
+                keyboard.insert(1, [InlineKeyboardButton("💸 בקשת משיכה", callback_data="request_payout")])
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return
+    
+    # ההזמנות שלי
+    if action == "menu_my_orders":
+        await query.answer()
+        return await BuyerHandlers.show_my_orders(update, context)
+    
+    # המועדפים שלי
+    if action == "menu_favorites":
+        await query.answer()
+        return await BuyerHandlers.show_my_favorites(update, context)
+    
+    # ההפקדות שלי
+    if action == "menu_my_deposits":
+        await query.answer()
+        user_id = update.effective_user.id
+        from database import db
+        
+        cursor = db.deposit_requests.find({"user_id": user_id}).sort("created_at", -1).limit(10)
+        deposits = await cursor.to_list(length=None)
+        
+        if not deposits:
+            text = "💰 *ההפקדות שלי*\n\nאין לך הפקדות עדיין."
+        else:
+            text = "💰 *ההפקדות שלי*\n\n"
+            for dep in deposits:
+                status_emoji = {
+                    "pending": "🟡",
+                    "approved": "✅",
+                    "rejected": "❌"
+                }.get(dep["status"], "❓")
+                
+                text += f"{status_emoji} {dep['amount']}₪ | {dep['reference_code']}\n"
+                text += f"   {dep['created_at'].strftime('%d/%m/%Y %H:%M')}\n\n"
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
+    
+    # העלאת קופון (מוכרים)
+    if action == "menu_upload_coupon":
+        await query.answer()
+        text = "📦 *העלאת קופון*\n\nלהעלאת קופון חדש, השתמש בפקודה:\n/upload"
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
+    
+    # המכירות שלי (מוכרים)
+    if action == "menu_my_sales":
+        await query.answer()
+        return await SellerHandlers.show_my_sales(update, context)
+    
+    # משיכת כספים (מוכרים)
+    if action == "menu_withdraw":
+        await query.answer()
+        return await SellerHandlers.request_withdrawal(update, context)
+    
+    # סטטיסטיקות (מוכרים)
+    if action == "menu_stats":
+        await query.answer()
+        return await SellerHandlers.show_seller_statistics(update, context)
+    
+    # הפוך למוכר
+    if action == "menu_become_seller":
+        await query.answer()
+        text = "🏪 *הפוך למוכר*\n\nלהרשמה כמוכר, השתמש בפקודה:\n/register_seller"
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
+    
+    # פאנל אדמין
+    if action == "menu_admin_panel":
+        await query.answer()
+        return await AdminHandlers.admin_menu(update, context)
+    
+    # ניהול מערכת
+    if action == "menu_system_management":
+        await query.answer()
+        user_id = update.effective_user.id
+        if user_id not in Config.ADMIN_IDS:
+            await query.edit_message_text("❌ אין לך הרשאות אדמין.")
+            return
+        
+        text = "🔧 *ניהול מערכת*\n\nבחר פעולה:"
+        keyboard = Keyboards.system_management_keyboard()
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        return
+    
+    # הצ'אטים שלי
+    if action == "menu_my_chats":
+        await query.answer()
+        return await ChatHandlers.my_chats(update, context)
+    
+    # הגדרות
+    if action == "menu_settings":
+        await query.answer()
+        user_id = update.effective_user.id
+        user = await UserService.get_user(user_id)
+        
+        notifications_status = "🔔 פעיל" if user and getattr(user, 'notifications_enabled', True) else "🔕 כבוי"
+        
+        text = f"""
+⚙️ *הגדרות*
+
+👤 *פרטי משתמש:*
+שם: {update.effective_user.first_name}
+שם משתמש: @{update.effective_user.username or 'לא מוגדר'}
+סוג חשבון: {'מוכר' if user and user.role.value in ['seller_verified', 'seller_unverified'] else 'קונה'}
+
+🔔 *התראות:* {notifications_status}
+
+📱 *פעולות זמינות:*
+"""
+        
+        keyboard = [
+            [InlineKeyboardButton("🔔 הפעל/כבה התראות", callback_data="settings_toggle_notifications")],
+            [InlineKeyboardButton("📊 הסטטיסטיקות שלי", callback_data="settings_my_stats")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return
+    
+    # תקנון
+    if action == "menu_rules":
+        await query.answer()
+        rules_text = """
+📋 *תקנון ומדיניות*
+
+*1. כללי שימוש*
+• הבוט מיועד לקניה ומכירה של קופונים וכרטיסים דיגיטליים
+• אסור להעלות קופונים מזויפים או לא תקינים
+• אסור לבצע עסקאות מחוץ למערכת
+
+*2. עמלות*
+• קונה: 2% מערך העסקה
+• מוכר מאומת: 3%
+• מוכר לא מאומת: 5%
+• משיכה: 1%
+
+*3. מדיניות החזרים*
+• יש 12 שעות לדווח על בעיה
+• אחרי 12 שעות העסקה נסגרת אוטומטית
+• החזרים בכפוף לאישור אדמין
+
+*4. אחריות*
+• המערכת אינה אחראית לקופונים לא תקינים
+• הקונה אחראי לבדוק את הקופון מיד
+• המוכר אחראי לספק קופון תקין
+
+לשאלות: /support
+"""
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        await query.edit_message_text(rules_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
+    
+    # פנייה למערכת
+    if action == "menu_support":
+        await query.answer()
+        text = "📩 *פנייה למערכת*\n\nלפתיחת פנייה חדשה, השתמש בפקודה:\n/support"
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
 
 
 async def settings_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -315,56 +552,38 @@ async def settings_callback_handler(update: Update, context: ContextTypes.DEFAUL
             [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
         ]
         
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        except Exception:
+            pass
 
 
 async def menu_text_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Router for ReplyKeyboard buttons (they arrive as plain text messages).
-    Without this, pressing menu buttons does nothing unless the user types commands.
+    Router for legacy ReplyKeyboard button texts.
+    Now that we use inline buttons, redirect users to the main menu.
     """
     if not update.message or not update.message.text:
         return
 
     text = update.message.text.strip()
 
-    # Buyer actions
-    if text == "🛒 קניית קופונים":
-        return await BuyerHandlers.browse_categories(update, context)
-    if text == "📜 ההזמנות שלי":
-        return await BuyerHandlers.show_my_orders(update, context)
-    if text == "💰 יתרה והטענה":
-        from handlers.payment_handlers import PaymentHandlers
-        return await PaymentHandlers.my_balance(update, context)
-    if text == "📋 תקנון":
-        return await rules_command(update, context)
-    if text == "💬 הצ'אטים שלי":
-        from handlers.chat_handlers import ChatHandlers
-        return await ChatHandlers.my_chats(update, context)
-
-    # Seller actions
-    if text == "📊 המכירות שלי":
-        return await SellerHandlers.show_my_sales(update, context)
-    if text == "📈 סטטיסטיקות":
-        return await SellerHandlers.show_seller_statistics(update, context)
-    if text == "💸 משיכת כספים":
-        return await SellerHandlers.request_withdrawal(update, context)
-
-    # Admin actions
-    if text == "👨‍💼 פאנל אדמין":
-        return await AdminHandlers.admin_menu(update, context)
+    # רשימת הטקסטים הישנים של כפתורי התפריט
+    old_menu_texts = [
+        "🛒 קניית קופונים", "📜 ההזמנות שלי", "💰 יתרה והטענה",
+        "📋 תקנון", "💬 הצ'אטים שלי", "📊 המכירות שלי",
+        "📈 סטטיסטיקות", "💸 משיכת כספים", "👨‍💼 פאנל אדמין",
+        "⚙️ הגדרות", "🔧 ניהול מערכת", "⭐ המועדפים שלי",
+        "📦 העלאת קופון", "🏪 הפוך למוכר", "📩 פנייה למערכת"
+    ]
     
-    # Settings
-    if text == "⚙️ הגדרות":
-        return await settings_menu(update, context)
-
-    # System management (admin only)
-    if text == "🔧 ניהול מערכת":
-        return await AdminHandlers.system_management_menu(update, context)
-
-    # מועדפים
-    if text == "⭐ המועדפים שלי":
-        return await BuyerHandlers.show_my_favorites(update, context)
+    # אם המשתמש הקליד טקסט של כפתור ישן, שלח אותו לתפריט הראשי
+    if text in old_menu_texts:
+        await update.message.reply_text(
+            "💡 התפריט עודכן לכפתורים אינטראקטיביים!\n\n"
+            "השתמש בפקודה /start או /menu לפתיחת התפריט הראשי."
+        )
+        return await main_menu_command(update, context)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     """טיפול בשגיאות"""
@@ -613,6 +832,9 @@ def main():
 
     # Inline "back to main menu"
     application.add_handler(CallbackQueryHandler(main_menu_command, pattern="^main_menu$"))
+    
+    # Menu callbacks (main menu inline buttons)
+    application.add_handler(CallbackQueryHandler(menu_callback_handler, pattern="^menu_"))
     
     # Settings callbacks
     application.add_handler(CallbackQueryHandler(settings_callback_handler, pattern="^settings_"))

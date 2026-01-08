@@ -27,9 +27,14 @@ class AdminHandlers:
     async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """תפריט אדמין ראשי"""
         user_id = update.effective_user.id
+        query = update.callback_query
         
         if not await UserService.is_admin(user_id):
-            await update.message.reply_text("❌ אין לך הרשאות אדמין.")
+            error_text = "❌ אין לך הרשאות אדמין."
+            if query:
+                await query.edit_message_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
             return
         
         # סטטיסטיקות מהירות
@@ -56,8 +61,16 @@ class AdminHandlers:
         
         keyboard = Keyboards.admin_main_keyboard()
         
-        if update.callback_query:
-            await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        if query:
+            try:
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+            except Exception:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=text,
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
         else:
             await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
     

@@ -11,50 +11,57 @@ class Keyboards:
     """מחלקה למקלדות טלגרם"""
     
     @staticmethod
-    def main_menu(user_role: UserRole) -> ReplyKeyboardMarkup:
-        """תפריט ראשי לפי תפקיד משתמש"""
+    def main_menu(user_role: UserRole) -> InlineKeyboardMarkup:
+        """תפריט ראשי לפי תפקיד משתמש - כפתורי אינליין"""
         keyboard = []
         
+        # כפתורים בסיסיים לכל המשתמשים
         keyboard.append([
-            KeyboardButton("🛒 קניית קופונים"),
-            KeyboardButton("💰 יתרה והטענה")
+            InlineKeyboardButton("🛒 קניית קופונים", callback_data="menu_buy_coupons"),
+            InlineKeyboardButton("💰 יתרה והטענה", callback_data="menu_balance")
         ])
         keyboard.append([
-            KeyboardButton("📜 ההזמנות שלי"),
-            KeyboardButton("⭐ המועדפים שלי")
+            InlineKeyboardButton("📜 ההזמנות שלי", callback_data="menu_my_orders"),
+            InlineKeyboardButton("⭐ המועדפים שלי", callback_data="menu_favorites")
+        ])
+        keyboard.append([
+            InlineKeyboardButton("💳 ההפקדות שלי", callback_data="menu_my_deposits")
         ])
         
+        # כפתורי מוכר
         if user_role in [UserRole.SELLER_VERIFIED, UserRole.SELLER_UNVERIFIED]:
             keyboard.append([
-                KeyboardButton("📦 העלאת קופון"),
-                KeyboardButton("📊 המכירות שלי")
+                InlineKeyboardButton("📦 העלאת קופון", callback_data="menu_upload_coupon"),
+                InlineKeyboardButton("📊 המכירות שלי", callback_data="menu_my_sales")
             ])
             keyboard.append([
-                KeyboardButton("💸 משיכת כספים"),
-                KeyboardButton("📈 סטטיסטיקות")
+                InlineKeyboardButton("💸 משיכת כספים", callback_data="menu_withdraw"),
+                InlineKeyboardButton("📈 סטטיסטיקות", callback_data="menu_stats")
             ])
         else:
             # הצג כפתור "הפוך למוכר" רק למשתמשים שאינם מוכרים
             keyboard.append([
-                KeyboardButton("🏪 הפוך למוכר")
+                InlineKeyboardButton("🏪 הפוך למוכר", callback_data="menu_become_seller")
             ])
         
+        # כפתורי אדמין
         if user_role == UserRole.ADMIN:
             keyboard.append([
-                KeyboardButton("👨‍💼 פאנל אדמין"),
-                KeyboardButton("🔧 ניהול מערכת")
+                InlineKeyboardButton("👨‍💼 פאנל אדמין", callback_data="menu_admin_panel"),
+                InlineKeyboardButton("🔧 ניהול מערכת", callback_data="menu_system_management")
             ])
         
+        # כפתורים נוספים
         keyboard.append([
-            KeyboardButton("💬 הצ'אטים שלי"),
-            KeyboardButton("⚙️ הגדרות")
+            InlineKeyboardButton("💬 הצ'אטים שלי", callback_data="menu_my_chats"),
+            InlineKeyboardButton("⚙️ הגדרות", callback_data="menu_settings")
         ])
         keyboard.append([
-            KeyboardButton("📋 תקנון"),
-            KeyboardButton("📩 פנייה למערכת")
+            InlineKeyboardButton("📋 תקנון", callback_data="menu_rules"),
+            InlineKeyboardButton("📩 פנייה למערכת", callback_data="menu_support")
         ])
         
-        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def categories_keyboard() -> InlineKeyboardMarkup:

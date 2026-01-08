@@ -296,17 +296,29 @@ class SellerHandlers:
     @staticmethod
     async def show_my_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """הצגת המכירות שלי"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
         user_id = update.effective_user.id
+        query = update.callback_query
         
         if not await UserService.is_seller(user_id):
-            await update.message.reply_text("❌ אתה צריך להיות מוכר כדי לראות מכירות.")
+            error_text = "❌ אתה צריך להיות מוכר כדי לראות מכירות."
+            if query:
+                await query.edit_message_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
             return
         
         orders = await OrderService.get_seller_orders(user_id)
         
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        
         if not orders:
-            text = "📊 אין לך מכירות עדיין.\n\nהעלה קופונים והמתן לקונים!"
-            await update.message.reply_text(text)
+            text = "📊 *המכירות שלי*\n\nאין לך מכירות עדיין.\n\nהעלה קופונים והמתן לקונים!"
+            if query:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             return
         
         # חישוב סטטיסטיקות
@@ -329,15 +341,25 @@ class SellerHandlers:
             
             text += f"\n{status} {coupon.title if coupon else 'קופון'} | {format_price(net)} | {format_datetime(order.created_at)}"
         
-        await update.message.reply_text(text, parse_mode="Markdown")
+        if query:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     @staticmethod
     async def show_seller_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """סטטיסטיקות מוכר"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
         user_id = update.effective_user.id
+        query = update.callback_query
         
         if not await UserService.is_seller(user_id):
-            await update.message.reply_text("❌ פונקציה זמינה רק למוכרים.")
+            error_text = "❌ פונקציה זמינה רק למוכרים."
+            if query:
+                await query.edit_message_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
             return
         
         user = await UserService.get_user(user_id)
@@ -376,19 +398,33 @@ class SellerHandlers:
   • סה"כ: {format_price(user.balance)}
 """
         
-        await update.message.reply_text(text, parse_mode="Markdown")
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
+        
+        if query:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
     
     @staticmethod
     async def request_withdrawal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """בקשת משיכת כספים"""
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        
         user_id = update.effective_user.id
+        query = update.callback_query
         
         if not await UserService.is_seller(user_id):
-            await update.message.reply_text("❌ משיכה זמינה רק למוכרים.")
+            error_text = "❌ משיכה זמינה רק למוכרים."
+            if query:
+                await query.edit_message_text(error_text)
+            else:
+                await update.message.reply_text(error_text)
             return ConversationHandler.END
         
         user = await UserService.get_user(user_id)
         available = user.balance - user.frozen_balance
+        
+        keyboard = [[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]]
         
         if available < Config.MIN_WITHDRAWAL_AMOUNT:
             text = f"""
@@ -399,7 +435,10 @@ class SellerHandlers:
 
 חסר: {format_price(Config.MIN_WITHDRAWAL_AMOUNT - available)}
 """
-            await update.message.reply_text(text, parse_mode="Markdown")
+            if query:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             return ConversationHandler.END
         
         commission = available * Config.WITHDRAWAL_COMMISSION
@@ -415,10 +454,13 @@ class SellerHandlers:
 📝 הבקשה תישלח לאדמינים לאישור.
 הכספים יועברו תוך 1-3 ימי עסקים.
 
-האם לאשר?
+לביצוע משיכה, השתמש בפקודה:
+/withdraw
 """
         
-        keyboard = Keyboards.back_button()  # TODO: add withdrawal confirmation
-        await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        if query:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         
         return ConversationHandler.END
