@@ -21,20 +21,26 @@ class ChatHandlers:
     async def my_chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """הצ'אטים שלי"""
         user_id = update.effective_user.id
+        query = update.callback_query
 
         chats = await ChatService.get_user_chats(user_id)
 
+        keyboard = []
+        
         if not chats:
             text = "💬 *הצ'אטים שלי*\n\n"
             text += "אין לך שיחות פעילות\n\n"
             text += "💡 תוכל לפתוח שיחה עם מוכר מדף הקופון"
+            keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
 
-            await update.message.reply_text(text, parse_mode="Markdown")
+            if query:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            else:
+                await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             return
 
         text = "💬 *הצ'אטים שלי*\n\n"
 
-        keyboard = []
         for i, chat in enumerate(chats[:10], 1):
             unread_emoji = "🔴" if chat.get("unread_count", 0) > 0 else "💬"
 
@@ -52,12 +58,20 @@ class ChatHandlers:
             )])
 
         keyboard.append([InlineKeyboardButton("🔄 רענן", callback_data="my_chats_refresh")])
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
 
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode="Markdown"
-        )
+        if query:
+            await query.edit_message_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+        else:
+            await update.message.reply_text(
+                text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
 
     @staticmethod
     async def open_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
