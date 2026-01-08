@@ -24,6 +24,18 @@ class Config:
         for uid in os.getenv("ADMIN_IDS", "").split(",") 
         if uid.strip()
     ]
+
+    # === Admin Forum (Topics) Mirror for Buyer/Seller Chats ===
+    # Optional: set to the forum group chat_id (usually starts with -100...)
+    # When enabled, every buyer/seller message is mirrored to a dedicated topic,
+    # and admins can reply from that topic and choose where the reply goes.
+    ADMIN_FORUM_CHAT_ID: int = int(os.getenv("ADMIN_FORUM_CHAT_ID", "0") or "0")
+    _ADMIN_FORUM_ENABLED_ENV = os.getenv("ADMIN_FORUM_ENABLED")
+    ADMIN_FORUM_ENABLED: bool = (
+        _ADMIN_FORUM_ENABLED_ENV.lower() == "true"
+        if _ADMIN_FORUM_ENABLED_ENV is not None and _ADMIN_FORUM_ENABLED_ENV != ""
+        else ADMIN_FORUM_CHAT_ID != 0
+    )
     
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")

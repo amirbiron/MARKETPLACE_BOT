@@ -25,6 +25,7 @@ from handlers.seller_handlers import SellerHandlers
 from handlers.admin_handlers import AdminHandlers
 from handlers.auction_handlers import get_auction_handlers
 from handlers.chat_handlers import get_chat_handlers
+from handlers.admin_forum_chat_handlers import get_admin_forum_chat_handlers
 from handlers.dispute_handlers import get_dispute_handlers
 from handlers.payment_handlers import get_payment_handlers
 from handlers.support_handlers import get_support_handlers
@@ -1281,6 +1282,10 @@ def main():
 
     # Chat handlers
     for handler in get_chat_handlers():
+        application.add_handler(handler)
+
+    # Admin Forum (Topics) mirroring handlers (optional)
+    for handler in get_admin_forum_chat_handlers():
         application.add_handler(handler)
 
     # Dispute handlers
