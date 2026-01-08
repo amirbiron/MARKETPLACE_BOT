@@ -9,6 +9,8 @@ from services.notification_service import NotificationService
 from services.fraud_detection_service import FraudDetectionService
 from services.escrow_service import EscrowService
 from services.payment_gateway_service import PaymentGatewayService
+from services.analytics_service import AnalyticsService
+from services.coupon_service import CouponService
 from database import db
 from config import Config
 import logging
@@ -53,6 +55,10 @@ class BackgroundScheduler:
             asyncio.create_task(self._escrow_daily_reconciliation()),
             # Payment Gateway Tasks
             asyncio.create_task(self._expire_old_payment_transactions()),
+            # Seller Dashboard Tasks
+            asyncio.create_task(self._record_daily_analytics()),
+            asyncio.create_task(self._publish_scheduled_coupons()),
+            asyncio.create_task(self._send_seller_daily_summaries()),
         ]
 
         logger.info(f"Started {len(self.tasks)} background tasks")
@@ -514,6 +520,183 @@ class BackgroundScheduler:
                 logger.error(f"Error expiring payment transactions: {e}")
 
             await asyncio.sleep(600)  # 10 דקות
+
+    # ==================== Seller Dashboard Tasks ====================
+
+    async def _record_daily_analytics(self):
+        """
+        תיעוד אנליטיקס יומי לכל המוכרים - כל יום בחצות
+        
+        שומר נתונים היסטוריים לגרפים ודוחות
+        """
+        while self.running:
+            try:
+                logger.info("Recording daily analytics for sellers...")
+                
+                # מציאת כל המוכרים הפעילים
+                sellers = await db.users.find({
+                    "role": {"$in": ["seller_verified", "seller_unverified"]},
+                    "blocked": {"$ne": True}
+                }).to_list(length=None)
+                
+                recorded = 0
+                for seller in sellers:
+                    try:
+                        await AnalyticsService.record_daily_analytics(seller["user_id"])
+                        recorded += 1
+                    except Exception as e:
+                        logger.warning(f"Failed to record analytics for seller {seller['user_id']}: {e}")
+                
+                logger.info(f"Recorded daily analytics for {recorded} sellers")
+                
+            except Exception as e:
+                logger.error(f"Error recording daily analytics: {e}")
+
+            await asyncio.sleep(86400)  # יום
+
+    async def _publish_scheduled_coupons(self):
+        """
+        פרסום קופונים מתוזמנים - כל 5 דקות
+        
+        מחפש קופונים שהגיע זמן הפרסום שלהם ומפרסם אותם
+        """
+        while self.running:
+            try:
+                logger.debug("Checking for scheduled coupons to publish...")
+                
+                now = datetime.utcnow()
+                
+                # מציאת קופונים מתוזמנים שהגיע זמנם
+                scheduled = await db.scheduled_coupons.find({
+                    "status": "pending",
+                    "scheduled_at": {"$lte": now}
+                }).to_list(length=None)
+                
+                published = 0
+                for item in scheduled:
+                    try:
+                        coupon_data = item.get("coupon_data", {})
+                        
+                        # יצירת הקופון
+                        coupon = await CouponService.create_coupon(
+                            seller_id=item["seller_id"],
+                            title=coupon_data.get("title", "קופון"),
+                            category=coupon_data.get("category", "אחר"),
+                            original_price=coupon_data.get("original_price", 0),
+                            sale_price=coupon_data.get("sale_price", 0),
+                            description=coupon_data.get("description"),
+                            digital_code=coupon_data.get("digital_code"),
+                            expires_at=coupon_data.get("expires_at")
+                        )
+                        
+                        if coupon:
+                            # עדכון הסטטוס
+                            await db.scheduled_coupons.update_one(
+                                {"_id": item["_id"]},
+                                {
+                                    "$set": {
+                                        "status": "published",
+                                        "published_coupon_id": coupon._id,
+                                        "published_at": now
+                                    }
+                                }
+                            )
+                            
+                            # שליחת התראה למוכר
+                            await NotificationService.send_notification(
+                                user_id=item["seller_id"],
+                                title="✅ קופון מתוזמן פורסם",
+                                message=f"הקופון '{coupon.title}' פורסם בהצלחה כמתוכנן!",
+                                notification_type="scheduled_published"
+                            )
+                            
+                            published += 1
+                        else:
+                            # סימון ככושל
+                            await db.scheduled_coupons.update_one(
+                                {"_id": item["_id"]},
+                                {"$set": {"status": "failed", "error": "Failed to create coupon"}}
+                            )
+                            
+                    except Exception as e:
+                        logger.error(f"Failed to publish scheduled coupon {item['_id']}: {e}")
+                        await db.scheduled_coupons.update_one(
+                            {"_id": item["_id"]},
+                            {"$set": {"status": "failed", "error": str(e)}}
+                        )
+                
+                if published > 0:
+                    logger.info(f"Published {published} scheduled coupons")
+                    
+            except Exception as e:
+                logger.error(f"Error publishing scheduled coupons: {e}")
+
+            await asyncio.sleep(300)  # 5 דקות
+
+    async def _send_seller_daily_summaries(self):
+        """
+        שליחת סיכומים יומיים למוכרים שהפעילו - כל יום בשעה 8 בבוקר
+        """
+        while self.running:
+            try:
+                logger.debug("Checking for daily summary notifications...")
+                
+                # בדיקה אם השעה היא 8 בבוקר (בערך)
+                current_hour = datetime.utcnow().hour
+                
+                if current_hour == 8:  # 8 UTC
+                    logger.info("Sending daily summaries to sellers...")
+                    
+                    # מציאת מוכרים שהפעילו סיכום יומי
+                    settings = await db.seller_alert_settings.find({
+                        "daily_summary": True
+                    }).to_list(length=None)
+                    
+                    sent = 0
+                    for setting in settings:
+                        try:
+                            seller_id = setting["seller_id"]
+                            
+                            # קבלת סטטיסטיקות אתמול
+                            yesterday_stats = await AnalyticsService.get_sales_by_period(seller_id, "day")
+                            
+                            if yesterday_stats.get("total_sales", 0) > 0 or True:  # שלח גם אם אין מכירות
+                                # יצירת סיכום
+                                summary = f"""
+📊 *סיכום יומי*
+
+📅 תאריך: {datetime.utcnow().strftime('%d/%m/%Y')}
+
+💰 מכירות אתמול:
+• סה"כ: {yesterday_stats.get('total_sales', 0)}
+• הכנסות נטו: {yesterday_stats.get('total_revenue', 0):.2f}₪
+
+בהצלחה היום! 🚀
+"""
+                                
+                                await NotificationService.send_notification(
+                                    user_id=seller_id,
+                                    title="📊 סיכום יומי",
+                                    message=summary,
+                                    notification_type="daily_summary"
+                                )
+                                sent += 1
+                                
+                        except Exception as e:
+                            logger.warning(f"Failed to send daily summary to seller {setting.get('seller_id')}: {e}")
+                    
+                    if sent > 0:
+                        logger.info(f"Sent daily summaries to {sent} sellers")
+                    
+                    # המתנה 23 שעות כדי לא לשלוח שוב
+                    await asyncio.sleep(82800)  # 23 שעות
+                else:
+                    # בדיקה כל שעה
+                    await asyncio.sleep(3600)  # שעה
+                    
+            except Exception as e:
+                logger.error(f"Error sending daily summaries: {e}")
+                await asyncio.sleep(3600)  # שעה
 
 
 # יצירת instance גלובלי

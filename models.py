@@ -1056,3 +1056,187 @@ class DailyCardLimit:
             total_amount=data.get("total_amount", 0.0),
             transaction_count=data.get("transaction_count", 0),
         )
+
+
+# ==================== Seller Dashboard Models ====================
+
+
+class SellerAnalytics:
+    """מודל אנליטיקס יומי למוכר - לשמירת סטטיסטיקות היסטוריות"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        date: datetime,
+        views: int = 0,
+        sales: int = 0,
+        revenue: float = 0.0,
+        top_categories: Optional[List[str]] = None,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.date = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        self.views = views
+        self.sales = sales
+        self.revenue = revenue
+        self.top_categories = top_categories or []
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "seller_id": self.seller_id,
+            "date": self.date,
+            "views": self.views,
+            "sales": self.sales,
+            "revenue": self.revenue,
+            "top_categories": self.top_categories,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SellerAnalytics":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            date=data["date"],
+            views=data.get("views", 0),
+            sales=data.get("sales", 0),
+            revenue=data.get("revenue", 0.0),
+            top_categories=data.get("top_categories", []),
+            created_at=data.get("created_at"),
+        )
+
+
+class AlertType(str, Enum):
+    """סוגי התראות"""
+    SALE_THRESHOLD = "sale_threshold"  # סף מכירות
+    NEGATIVE_REVIEW = "negative_review"  # ביקורת שלילית
+    DAILY_SUMMARY = "daily_summary"  # סיכום יומי
+    WEEKLY_SUMMARY = "weekly_summary"  # סיכום שבועי
+    DISPUTE_OPENED = "dispute_opened"  # מחלוקת נפתחה
+    LOW_STOCK = "low_stock"  # מלאי נמוך (לעתיד)
+
+
+class SellerAlertSettings:
+    """מודל הגדרות התראות למוכר"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        sales_threshold_enabled: bool = False,
+        sales_threshold_amount: int = 10,  # התראה אחרי X מכירות
+        negative_review_alert: bool = True,  # התראה על ביקורת שלילית
+        daily_summary: bool = False,  # סיכום יומי
+        weekly_summary: bool = False,  # סיכום שבועי
+        dispute_alert: bool = True,  # התראה על מחלוקת
+        low_trust_score_alert: bool = True,  # התראה על ניקוד אמינות נמוך
+        email: Optional[str] = None,  # אימייל לסיכומים (אופציונלי)
+        created_at: Optional[datetime] = None,
+        updated_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.sales_threshold_enabled = sales_threshold_enabled
+        self.sales_threshold_amount = sales_threshold_amount
+        self.negative_review_alert = negative_review_alert
+        self.daily_summary = daily_summary
+        self.weekly_summary = weekly_summary
+        self.dispute_alert = dispute_alert
+        self.low_trust_score_alert = low_trust_score_alert
+        self.email = email
+        self.created_at = created_at or datetime.utcnow()
+        self.updated_at = updated_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "seller_id": self.seller_id,
+            "sales_threshold_enabled": self.sales_threshold_enabled,
+            "sales_threshold_amount": self.sales_threshold_amount,
+            "negative_review_alert": self.negative_review_alert,
+            "daily_summary": self.daily_summary,
+            "weekly_summary": self.weekly_summary,
+            "dispute_alert": self.dispute_alert,
+            "low_trust_score_alert": self.low_trust_score_alert,
+            "email": self.email,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "SellerAlertSettings":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            sales_threshold_enabled=data.get("sales_threshold_enabled", False),
+            sales_threshold_amount=data.get("sales_threshold_amount", 10),
+            negative_review_alert=data.get("negative_review_alert", True),
+            daily_summary=data.get("daily_summary", False),
+            weekly_summary=data.get("weekly_summary", False),
+            dispute_alert=data.get("dispute_alert", True),
+            low_trust_score_alert=data.get("low_trust_score_alert", True),
+            email=data.get("email"),
+            created_at=data.get("created_at"),
+            updated_at=data.get("updated_at"),
+        )
+
+
+class ScheduledCoupon:
+    """מודל קופון מתוזמן לפרסום"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        coupon_data: Dict[str, Any],  # נתוני הקופון לפרסום
+        scheduled_at: datetime,  # זמן פרסום מתוכנן
+        status: str = "pending",  # pending, published, cancelled
+        published_coupon_id: Optional[ObjectId] = None,
+        created_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.coupon_data = coupon_data
+        self.scheduled_at = scheduled_at
+        self.status = status
+        self.published_coupon_id = published_coupon_id
+        self.created_at = created_at or datetime.utcnow()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict עבור MongoDB"""
+        data = {
+            "seller_id": self.seller_id,
+            "coupon_data": self.coupon_data,
+            "scheduled_at": self.scheduled_at,
+            "status": self.status,
+            "published_coupon_id": self.published_coupon_id,
+            "created_at": self.created_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ScheduledCoupon":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            coupon_data=data["coupon_data"],
+            scheduled_at=data["scheduled_at"],
+            status=data.get("status", "pending"),
+            published_coupon_id=data.get("published_coupon_id"),
+            created_at=data.get("created_at"),
+        )
