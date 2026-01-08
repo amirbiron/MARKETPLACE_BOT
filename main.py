@@ -4,6 +4,7 @@ Marketplace Telegram Bot - Main Entry Point
 import logging
 import os
 import sys
+from enum import Enum
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     Application,
@@ -85,7 +86,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     
     # הסרת מקלדת ראשית ישנה (אם קיימת) והצגת כפתורי אינליין
-    keyboard = Keyboards.main_menu(db_user.role)
+    # העבר גם seller_status לתפריט כדי להבטיח שמוכרים מאושרים יראו כפתורי מוכר
+    seller_status = getattr(db_user, 'seller_status', None)
+    if isinstance(seller_status, Enum):
+        seller_status = seller_status.value
+    keyboard = Keyboards.main_menu(db_user.role, seller_status)
     # First remove any existing reply keyboard, then show inline menu
     remove_msg = await update.message.reply_text("⏳ טוען תפריט...", reply_markup=ReplyKeyboardRemove())
     await remove_msg.delete()
@@ -222,7 +227,11 @@ async def main_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await UserService.set_admin(user.id)
             db_user = await UserService.get_user(user.id) or db_user
 
-    keyboard = Keyboards.main_menu(db_user.role)
+    # העבר גם seller_status לתפריט כדי להבטיח שמוכרים מאושרים יראו כפתורי מוכר
+    seller_status = getattr(db_user, 'seller_status', None)
+    if isinstance(seller_status, Enum):
+        seller_status = seller_status.value
+    keyboard = Keyboards.main_menu(db_user.role, seller_status)
     text = "🏠 *תפריט ראשי*\n\nבחר פעולה מהכפתורים:"
 
     if update.callback_query:

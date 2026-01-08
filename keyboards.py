@@ -11,8 +11,13 @@ class Keyboards:
     """מחלקה למקלדות טלגרם"""
     
     @staticmethod
-    def main_menu(user_role: UserRole) -> InlineKeyboardMarkup:
-        """תפריט ראשי לפי תפקיד משתמש - כפתורי אינליין"""
+    def main_menu(user_role: UserRole, seller_status: str = None) -> InlineKeyboardMarkup:
+        """תפריט ראשי לפי תפקיד משתמש - כפתורי אינליין
+        
+        Args:
+            user_role: תפקיד המשתמש
+            seller_status: סטטוס מוכר (pending/approved/blocked) - בדיקה נוספת
+        """
         keyboard = []
         
         # כפתורים בסיסיים לכל המשתמשים
@@ -29,8 +34,12 @@ class Keyboards:
             InlineKeyboardButton("📜 קופונים שנמכרו", callback_data="menu_sold_coupons")
         ])
         
-        # כפתורי מוכר
-        if user_role in [UserRole.SELLER_VERIFIED, UserRole.SELLER_UNVERIFIED]:
+        # בדיקה האם משתמש הוא מוכר - לפי role או לפי seller_status מאושר
+        is_seller = user_role in [UserRole.SELLER_VERIFIED, UserRole.SELLER_UNVERIFIED]
+        is_approved_seller = seller_status == "approved"
+        
+        # כפתורי מוכר - הצג אם יש role מוכר או אם seller_status הוא approved
+        if is_seller or is_approved_seller:
             keyboard.append([
                 InlineKeyboardButton("📦 העלאת קופון", callback_data="menu_upload_coupon"),
                 InlineKeyboardButton("📊 המכירות שלי", callback_data="menu_my_sales")
