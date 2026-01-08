@@ -197,14 +197,14 @@ class Keyboards:
             
             keyboard.append(nav_row)
         
-        keyboard.append([InlineKeyboardButton("🔙 חזרה", callback_data=f"{prefix}_back")])
+        keyboard.append([InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")])
         
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def back_button() -> InlineKeyboardMarkup:
         """כפתור חזרה פשוט"""
-        return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 חזרה", callback_data="back")]])
+        return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]])
     
     @staticmethod
     def admin_main_keyboard() -> InlineKeyboardMarkup:
