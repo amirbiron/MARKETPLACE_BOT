@@ -218,7 +218,23 @@ class SellerHandlers:
             await update.message.reply_text("❌ אתה צריך להירשם כמוכר קודם!")
             return ConversationHandler.END
         
-        # בדיקת הגבלה יומית
+        # === בדיקת קרדיט ואמצעי תשלום (מודל Classifieds) ===
+        if Config.CLASSIFIEDS_MODEL_ENABLED:
+            can_upload, error_msg = await SellerHandlers.check_credit_before_upload(user_id)
+            if not can_upload:
+                keyboard = [
+                    [InlineKeyboardButton("💰 טען קרדיט", callback_data="topup_credit")],
+                    [InlineKeyboardButton("💳 הגדר אמצעי תשלום", callback_data="setup_payment_methods")],
+                    [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+                ]
+                await update.message.reply_text(
+                    error_msg,
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode="Markdown"
+                )
+                return ConversationHandler.END
+        
+        # בדיקת הגבלה יומית (למוכרים לא מאומתים)
         is_verified = await UserService.is_verified_seller(user_id)
         if not is_verified:
             # בדיקה כמה קופונים העלה היום
@@ -1317,3 +1333,343 @@ class SellerHandlers:
             await query.answer("❌ ביטול נכשל", show_alert=True)
         
         return await SellerHandlers.show_scheduled_list(update, context)
+
+    # ==================== Classifieds Model - Credit Management ====================
+    
+    @staticmethod
+    async def show_seller_credit_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """תפריט קרדיט שירות למוכר"""
+        from services.service_credit_service import ServiceCreditService
+        
+        query = update.callback_query
+        if query:
+            await query.answer()
+        
+        user_id = update.effective_user.id
+        
+        if not await UserService.is_seller(user_id):
+            text = "❌ תפריט זה זמין רק למוכרים."
+            if query:
+                await query.edit_message_text(text)
+            else:
+                await update.message.reply_text(text)
+            return
+        
+        # קבלת סטטיסטיקות קרדיט
+        stats = await ServiceCreditService.get_credit_stats(user_id)
+        payment_methods = await ServiceCreditService.get_seller_payment_methods(user_id)
+        
+        balance = stats.get("balance", 0)
+        can_publish = stats.get("can_publish", False)
+        remaining_sales = stats.get("estimated_remaining_sales", 0)
+        
+        status_icon = "✅" if can_publish else "⚠️"
+        
+        text = f"""
+💰 *קרדיט שירות*
+
+{status_icon} יתרה: *{balance:.2f} נקודות קרדיט*
+🛒 מספיק ל-~{remaining_sales} מכירות נוספות
+
+📊 *סטטיסטיקות:*
+• סה"כ מכירות: {stats.get('sales_count', 0)}
+• סה"כ הכנסות (P2P): ₪{stats.get('total_earned_real_money', 0):.2f}
+• עמלות ששולמו: {stats.get('total_commissions_paid', 0):.2f} נקודות
+
+📌 מינימום לפרסום: {Config.SELLER_MIN_BALANCE_FOR_PUBLISH:.0f} נקודות
+📌 עמלה למכירה: {Config.SELLER_COMMISSION_RATE_P2P * 100:.0f}%
+
+💳 *אמצעי תשלום שלך:*
+• ביט: {payment_methods.get('bit', '❌ לא הוגדר')}
+• פייבוקס: {'✅ הוגדר' if payment_methods.get('paybox') else '❌ לא הוגדר'}
+
+⚠️ קרדיט שירות הוא קרדיט דיגיטלי לתשלום עמלות בלבד ואינו ניתן להחזר כספי.
+"""
+        
+        keyboard = Keyboards.seller_credit_menu_keyboard(balance, can_publish)
+        
+        if query:
+            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        else:
+            await update.message.reply_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    @staticmethod
+    async def show_topup_amounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הצגת סכומי טעינה"""
+        query = update.callback_query
+        await query.answer()
+        
+        text = """
+➕ *טעינת קרדיט שירות*
+
+בחר סכום לטעינה:
+
+💡 *בונוסים:*
+• תשלום חיצוני (משולם): +25% קרדיט
+• קריפטו: +50% קרדיט
+• Telegram Stars: ללא בונוס (עמלה 30%)
+
+⚠️ שים לב: זהו קרדיט דיגיטלי לתשלום עמלות בלבד, אינו ניתן להחזר כספי.
+"""
+        
+        keyboard = Keyboards.topup_amounts_keyboard()
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    @staticmethod
+    async def select_topup_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """בחירת סכום טעינה"""
+        query = update.callback_query
+        await query.answer()
+        
+        amount = float(query.data.replace("topup_amount_", ""))
+        context.user_data["topup_amount"] = amount
+        
+        # חישוב קרדיט לפי אמצעי תשלום
+        from services.service_credit_service import ServiceCreditService
+        from models import TopupPaymentMethod
+        
+        ext_credit, _, _ = ServiceCreditService.calculate_credit_with_bonus(amount, TopupPaymentMethod.EXTERNAL_LINK)
+        stars_credit, _, _ = ServiceCreditService.calculate_credit_with_bonus(amount, TopupPaymentMethod.TELEGRAM_STARS)
+        crypto_credit, _, _ = ServiceCreditService.calculate_credit_with_bonus(amount, TopupPaymentMethod.CRYPTO)
+        
+        text = f"""
+💰 *טעינת ₪{amount:.0f}*
+
+בחר אמצעי תשלום:
+
+💳 *לינק תשלום חיצוני (משולם)* ⭐ מומלץ
+   שלם ₪{amount:.0f} → קבל *{ext_credit:.0f} נקודות* (+25%)
+   
+🌟 *Telegram Stars*
+   שלם ~₪{amount * 1.3:.0f} → קבל *{stars_credit:.0f} נקודות*
+   ⚠️ עמלת טלגרם 30%
+   
+₿ *קריפטו*
+   שלם שווה ערך ₪{amount:.0f} → קבל *{crypto_credit:.0f} נקודות* (+50%)
+"""
+        
+        keyboard = Keyboards.topup_payment_method_keyboard(amount)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    @staticmethod
+    async def process_topup_external(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """עיבוד טעינה בתשלום חיצוני"""
+        from services.service_credit_service import ServiceCreditService
+        from models import TopupPaymentMethod
+        import random
+        import string
+        
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        amount_str = query.data.replace("topup_method_external_", "")
+        amount = float(amount_str)
+        
+        # יצירת בקשת טעינה
+        topup, error = await ServiceCreditService.create_topup_request(
+            seller_id=user_id,
+            amount_paid=amount,
+            payment_method=TopupPaymentMethod.EXTERNAL_LINK
+        )
+        
+        if error:
+            await query.edit_message_text(error)
+            return
+        
+        # חישוב קרדיט צפוי
+        credit_received, _, _ = ServiceCreditService.calculate_credit_with_bonus(
+            amount, TopupPaymentMethod.EXTERNAL_LINK
+        )
+        
+        text = f"""
+💳 *טעינת קרדיט - תשלום חיצוני*
+
+💰 סכום לתשלום: *₪{amount:.0f}*
+🎁 קרדיט שתקבל: *{credit_received:.0f} נקודות*
+📋 קוד זיהוי: `{topup.reference_code}`
+
+━━━━━━━━━━━━━━━━━━━━
+
+📱 *אמצעי תשלום:*
+"""
+        
+        if Config.BIT_PHONE:
+            text += f"\nביט: `{Config.BIT_PHONE}`"
+        if Config.PAYBOX_LINK:
+            text += f"\nפייבוקס: {Config.PAYBOX_LINK}"
+        
+        text += f"""
+
+━━━━━━━━━━━━━━━━━━━━
+
+✅ *אחרי ששילמת:*
+שלח צילום מסך של אישור התשלום כאן.
+
+⚠️ חשוב לציין את קוד הזיהוי בהערה!
+"""
+        
+        context.user_data["pending_topup_id"] = str(topup._id)
+        
+        keyboard = [[InlineKeyboardButton("❌ ביטול", callback_data="seller_credit_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        
+        return "WAITING_TOPUP_PROOF"  # For conversation handler
+    
+    @staticmethod
+    async def setup_payment_methods(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """הגדרת אמצעי תשלום"""
+        from services.service_credit_service import ServiceCreditService
+        
+        query = update.callback_query
+        await query.answer()
+        
+        user_id = update.effective_user.id
+        payment_methods = await ServiceCreditService.get_seller_payment_methods(user_id)
+        
+        text = """
+💳 *הגדרת אמצעי תשלום*
+
+הגדר את אמצעי התשלום שלך כדי שקונים יוכלו לשלם לך ישירות.
+
+📱 *ביט* - מספר טלפון לתשלום
+🔗 *פייבוקס* - קישור לתשלום
+
+⚠️ חובה להגדיר לפחות אמצעי תשלום אחד כדי לפרסם קופונים!
+"""
+        
+        keyboard = Keyboards.setup_payment_methods_keyboard(payment_methods)
+        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    
+    @staticmethod
+    async def setup_bit_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """התחלת הגדרת ביט"""
+        query = update.callback_query
+        await query.answer()
+        
+        text = """
+📱 *הגדרת ביט*
+
+שלח את מספר הטלפון שלך לתשלומי ביט:
+
+לדוגמה: `0501234567`
+
+לביטול: /cancel
+"""
+        await query.edit_message_text(text, parse_mode="Markdown")
+        return "SETUP_BIT"
+    
+    @staticmethod
+    async def process_bit_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """עיבוד הגדרת ביט"""
+        from services.service_credit_service import ServiceCreditService
+        
+        user_id = update.effective_user.id
+        phone = update.message.text.strip().replace("-", "").replace(" ", "")
+        
+        # וולידציה
+        if not phone.isdigit() or len(phone) != 10 or not phone.startswith("05"):
+            await update.message.reply_text(
+                "❌ מספר טלפון לא תקין.\n"
+                "שלח מספר בפורמט 05XXXXXXXX או /cancel לביטול"
+            )
+            return "SETUP_BIT"
+        
+        # קבלת אמצעי תשלום קיימים
+        current_methods = await ServiceCreditService.get_seller_payment_methods(user_id)
+        
+        # עדכון
+        success, message = await ServiceCreditService.update_payment_methods(
+            seller_id=user_id,
+            bit_phone=phone,
+            paybox_link=current_methods.get("paybox")
+        )
+        
+        if success:
+            await update.message.reply_text(
+                f"✅ ביט עודכן בהצלחה!\n\nמספר: {phone}"
+            )
+        else:
+            await update.message.reply_text(message)
+        
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def setup_paybox_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """התחלת הגדרת פייבוקס"""
+        query = update.callback_query
+        await query.answer()
+        
+        text = """
+🔗 *הגדרת פייבוקס*
+
+שלח את קישור הפייבוקס שלך:
+
+לדוגמה: `https://payboxapp.page.link/...`
+
+לביטול: /cancel
+"""
+        await query.edit_message_text(text, parse_mode="Markdown")
+        return "SETUP_PAYBOX"
+    
+    @staticmethod
+    async def process_paybox_setup(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """עיבוד הגדרת פייבוקס"""
+        from services.service_credit_service import ServiceCreditService
+        
+        user_id = update.effective_user.id
+        link = update.message.text.strip()
+        
+        # וולידציה בסיסית
+        if not link.startswith("http"):
+            await update.message.reply_text(
+                "❌ קישור לא תקין.\n"
+                "שלח קישור מלא (מתחיל ב-http) או /cancel לביטול"
+            )
+            return "SETUP_PAYBOX"
+        
+        # קבלת אמצעי תשלום קיימים
+        current_methods = await ServiceCreditService.get_seller_payment_methods(user_id)
+        
+        # עדכון
+        success, message = await ServiceCreditService.update_payment_methods(
+            seller_id=user_id,
+            bit_phone=current_methods.get("bit"),
+            paybox_link=link
+        )
+        
+        if success:
+            await update.message.reply_text("✅ פייבוקס עודכן בהצלחה!")
+        else:
+            await update.message.reply_text(message)
+        
+        return ConversationHandler.END
+    
+    @staticmethod
+    async def check_credit_before_upload(user_id: int) -> tuple:
+        """
+        בדיקת קרדיט לפני העלאת קופון
+        
+        Returns:
+            Tuple[can_upload, error_message]
+        """
+        from services.service_credit_service import ServiceCreditService
+        
+        # בדיקת קרדיט
+        can_publish, credit_error = await ServiceCreditService.can_seller_publish(user_id)
+        
+        if not can_publish:
+            return False, credit_error
+        
+        # בדיקת אמצעי תשלום
+        payment_methods = await ServiceCreditService.get_seller_payment_methods(user_id)
+        
+        if not payment_methods:
+            return False, (
+                "❌ לא הגדרת אמצעי תשלום!\n\n"
+                "לפני שתוכל לפרסם קופונים, עליך להגדיר "
+                "לפחות אמצעי תשלום אחד (ביט או פייבוקס).\n\n"
+                "לחץ על 'הגדר אמצעי תשלום' בתפריט קרדיט שירות."
+            )
+        
+        return True, ""

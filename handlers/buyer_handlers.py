@@ -99,13 +99,35 @@ class BuyerHandlers:
         seller = await UserService.get_user(coupon.seller_id)
         seller_name = seller.business_name if seller and seller.business_name else "מוכר"
         rating = get_star_rating(seller.rating_average) if seller else "⭐ חדש"
-        
-        # חישוב מחיר סופי
-        buyer_commission = coupon.sale_price * Config.BUYER_COMMISSION
-        total_price = coupon.sale_price + buyer_commission
         discount = calculate_discount_percent(coupon.original_price, coupon.sale_price)
         
-        text = f"""
+        # במודל P2P (Classifieds) - אין עמלת קנייה
+        if Config.CLASSIFIEDS_MODEL_ENABLED:
+            text = f"""
+🎫 *{coupon.title}*
+
+📁 קטגוריה: {coupon.category}
+💰 מחיר מקורי: ~{format_price(coupon.original_price)}~
+💵 מחיר לתשלום: *{format_price(coupon.sale_price)}*
+🏷️ הנחה: *{discount}%*
+
+👤 מוכר: {seller_name}
+⭐ דירוג: {rating} ({seller.rating_count} ביקורות)
+
+📝 תיאור:
+{coupon.description or 'אין תיאור'}
+
+━━━━━━━━━━━━━━━━━━━━
+💡 *תשלום ישיר למוכר* (P2P)
+התשלום מתבצע ישירות למוכר באמצעות ביט/פייבוקס.
+לחץ "קנה עכשיו" לצפייה בפרטי התשלום.
+"""
+        else:
+            # מודל ארנק ישן - כולל עמלת קנייה
+            buyer_commission = coupon.sale_price * Config.BUYER_COMMISSION
+            total_price = coupon.sale_price + buyer_commission
+            
+            text = f"""
 🎫 *{coupon.title}*
 
 📁 קטגוריה: {coupon.category}

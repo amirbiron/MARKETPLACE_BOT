@@ -197,6 +197,44 @@ class Config:
     # Coupon Duplication
     COUPON_DUPLICATE_ENABLED: bool = True  # הפעלת שכפול קופונים
     
+    # === Classifieds Model Settings (P2P / לוח מודעות) ===
+    
+    # מודל הרווח החדש - מוכרים בלבד מחזיקים קרדיט שירות
+    CLASSIFIEDS_MODEL_ENABLED: bool = True  # הפעלת המודל החדש
+    
+    # קרדיט שירות למוכרים
+    SELLER_MIN_BALANCE_FOR_PUBLISH: float = 10.0  # מינימום קרדיט לפרסום קופון
+    SELLER_INITIAL_CREDIT_REQUIRED: float = 20.0  # קרדיט ראשוני נדרש להרשמה
+    SELLER_COMMISSION_RATE_P2P: float = 0.05  # 5% עמלה על מכירות (מנוכה מקרדיט המוכר)
+    
+    # בונוסי טעינת קרדיט (לפי אמצעי תשלום)
+    TOPUP_BONUS_EXTERNAL_LINK: float = 0.25  # 25% בונוס לתשלום חיצוני (משולם/Upay)
+    TOPUP_BONUS_CRYPTO: float = 0.50  # 50% בונוס לתשלום קריפטו
+    TOPUP_BONUS_STARS: float = 0.0  # אין בונוס ל-Telegram Stars (עמלה גבוהה)
+    
+    # חבילות קרדיט משתלמות
+    TOPUP_PACKAGES: dict = {
+        50: 55,   # ₪50 → ₪55 קרדיט (10% בונוס)
+        100: 120,  # ₪100 → ₪120 קרדיט (20% בונוס)
+        200: 260,  # ₪200 → ₪260 קרדיט (30% בונוס)
+    }
+    
+    # תהליך P2P
+    SELLER_CONFIRMATION_TIMEOUT_HOURS: int = 12  # שעות לאישור מוכר
+    SELLER_TIMEOUT_PENALTY: float = 10.0  # קנס למוכר שלא עונה בזמן (₪10 מהקרדיט)
+    SELLER_MAX_TIMEOUT_VIOLATIONS: int = 3  # מקסימום הפרות לפני השעייה
+    
+    # תגים למוכרים
+    SELLER_VERIFIED_BADGE_MIN_SALES: int = 10  # מינימום מכירות לתג "מאומת ✓"
+    SELLER_EXCELLENT_BADGE_MIN_SALES: int = 50  # מינימום מכירות לתג "מצטיין ⭐"
+    SELLER_EXCELLENT_BADGE_MIN_RATING: float = 4.8  # מינימום דירוג לתג "מצטיין"
+    
+    # הגבלות ואזהרות
+    SELLER_LOW_RATING_WARNING: float = 3.5  # אזהרה אם דירוג מתחת
+    SELLER_LOW_RATING_BLOCK: float = 2.5  # חסימה זמנית אם דירוג מתחת
+    SELLER_REPORT_THRESHOLD_REVIEW: int = 3  # מספר דיווחים לבדיקה ידנית
+    SELLER_REPORT_THRESHOLD_BLOCK: int = 5  # מספר דיווחים לחסימה אוטומטית
+    
     @classmethod
     def validate(cls) -> bool:
         """בדיקת תקינות ההגדרות"""
