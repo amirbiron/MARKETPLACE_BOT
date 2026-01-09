@@ -32,6 +32,25 @@ class OrderStatus(str, Enum):
     CONFIRMED = "confirmed"  # קונה אישר קבלת קופון
 
 
+class P2POrderStatus(str, Enum):
+    """סטטוסי הזמנות P2P - מודל לוח מודעות"""
+    PENDING_BUYER_PAYMENT = "pending_buyer_payment"  # ממתין לתשלום הקונה
+    PENDING_SELLER_CONFIRMATION = "pending_seller_confirmation"  # ממתין לאישור המוכר
+    AUTO_DISPUTE = "auto_dispute"  # נכנס למחלוקת אוטומטית (timeout 12 שעות)
+    MANUAL_DISPUTE = "manual_dispute"  # מחלוקת שנפתחה ידנית
+    COMPLETED = "completed"  # הושלם בהצלחה
+    CANCELLED = "cancelled"  # בוטל
+    REFUNDED = "refunded"  # הוחזר (לא רלוונטי ל-P2P אבל נשמר לתאימות)
+
+
+class TopupPaymentMethod(str, Enum):
+    """אמצעי תשלום לטעינת קרדיט שירות"""
+    TELEGRAM_STARS = "telegram_stars"
+    EXTERNAL_LINK = "external_link"  # משולם/Upay
+    CRYPTO = "crypto"
+    BANK_TRANSFER = "bank_transfer"
+
+
 class AuctionStatus(str, Enum):
     """סטטוסי מכרזים"""
     ACTIVE = "active"
@@ -116,6 +135,13 @@ class User:
         rating_count: int = 0,
         created_at: Optional[datetime] = None,
         _id: Optional[ObjectId] = None,
+        # === שדות חדשים למודל לוח מודעות (Classifieds) ===
+        service_credit_balance: float = 0.0,  # קרדיט שירות למוכרים (Non-Refundable)
+        payment_methods: Optional[Dict[str, str]] = None,  # {bit: "050...", paybox: "https://..."}
+        total_earned_real_money: float = 0.0,  # סה"כ כסף אמיתי שהמוכר קיבל מקונים (P2P)
+        total_commissions_paid: float = 0.0,  # סה"כ עמלות שנוכו מהקרדיט
+        timeout_violations: int = 0,  # כמה פעמים לא ענה בזמן (12 שעות)
+        sales_count: int = 0,  # מספר מכירות מוצלחות
     ):
         self._id = _id
         self.user_id = user_id
@@ -133,6 +159,13 @@ class User:
         self.rating_average = rating_average
         self.rating_count = rating_count
         self.created_at = created_at or datetime.utcnow()
+        # === שדות חדשים ===
+        self.service_credit_balance = service_credit_balance
+        self.payment_methods = payment_methods or {}
+        self.total_earned_real_money = total_earned_real_money
+        self.total_commissions_paid = total_commissions_paid
+        self.timeout_violations = timeout_violations
+        self.sales_count = sales_count
     
     @property
     def display_name(self) -> str:
@@ -157,6 +190,13 @@ class User:
             "rating_average": self.rating_average,
             "rating_count": self.rating_count,
             "created_at": self.created_at,
+            # === שדות חדשים למודל לוח מודעות ===
+            "service_credit_balance": self.service_credit_balance,
+            "payment_methods": self.payment_methods,
+            "total_earned_real_money": self.total_earned_real_money,
+            "total_commissions_paid": self.total_commissions_paid,
+            "timeout_violations": self.timeout_violations,
+            "sales_count": self.sales_count,
         }
         if self._id:
             data["_id"] = self._id
@@ -203,6 +243,13 @@ class User:
             rating_average=data.get("rating_average", 0.0),
             rating_count=data.get("rating_count", 0),
             created_at=data.get("created_at"),
+            # === שדות חדשים למודל לוח מודעות ===
+            service_credit_balance=data.get("service_credit_balance", 0.0),
+            payment_methods=data.get("payment_methods", {}),
+            total_earned_real_money=data.get("total_earned_real_money", 0.0),
+            total_commissions_paid=data.get("total_commissions_paid", 0.0),
+            timeout_violations=data.get("timeout_violations", 0),
+            sales_count=data.get("sales_count", 0),
         )
 
 
@@ -333,6 +380,164 @@ class Order:
             created_at=data.get("created_at"),
             confirmed_at=data.get("confirmed_at"),
             dispute_deadline=data.get("dispute_deadline"),
+        )
+
+
+class P2POrder:
+    """מודל הזמנה P2P - מודל לוח מודעות"""
+    
+    def __init__(
+        self,
+        buyer_id: int,
+        seller_id: int,
+        coupon_id: ObjectId,
+        price: float,  # מחיר המכירה (לא כולל עמלות - עמלות רק למוכר)
+        status: P2POrderStatus = P2POrderStatus.PENDING_BUYER_PAYMENT,
+        payment_method_used: Optional[str] = None,  # bit/paybox
+        payment_proof_image: Optional[str] = None,  # file_id של צילום מסך
+        seller_confirmation_deadline: Optional[datetime] = None,  # 12 שעות מהעלאת צילום
+        seller_confirmed_at: Optional[datetime] = None,
+        dispute_opened_at: Optional[datetime] = None,
+        dispute_reason: Optional[str] = None,
+        admin_notes: Optional[str] = None,
+        commission_amount: float = 0.0,  # עמלה שנוכתה מהמוכר
+        created_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.buyer_id = buyer_id
+        self.seller_id = seller_id
+        self.coupon_id = coupon_id
+        self.price = price
+        self.status = status
+        self.payment_method_used = payment_method_used
+        self.payment_proof_image = payment_proof_image
+        self.seller_confirmation_deadline = seller_confirmation_deadline
+        self.seller_confirmed_at = seller_confirmed_at
+        self.dispute_opened_at = dispute_opened_at
+        self.dispute_reason = dispute_reason
+        self.admin_notes = admin_notes
+        self.commission_amount = commission_amount
+        self.created_at = created_at or datetime.utcnow()
+        self.completed_at = completed_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "buyer_id": self.buyer_id,
+            "seller_id": self.seller_id,
+            "coupon_id": self.coupon_id,
+            "price": self.price,
+            "status": self.status.value if isinstance(self.status, Enum) else self.status,
+            "payment_method_used": self.payment_method_used,
+            "payment_proof_image": self.payment_proof_image,
+            "seller_confirmation_deadline": self.seller_confirmation_deadline,
+            "seller_confirmed_at": self.seller_confirmed_at,
+            "dispute_opened_at": self.dispute_opened_at,
+            "dispute_reason": self.dispute_reason,
+            "admin_notes": self.admin_notes,
+            "commission_amount": self.commission_amount,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "P2POrder":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            buyer_id=data["buyer_id"],
+            seller_id=data["seller_id"],
+            coupon_id=data["coupon_id"],
+            price=data["price"],
+            status=P2POrderStatus(data.get("status", "pending_buyer_payment")),
+            payment_method_used=data.get("payment_method_used"),
+            payment_proof_image=data.get("payment_proof_image"),
+            seller_confirmation_deadline=data.get("seller_confirmation_deadline"),
+            seller_confirmed_at=data.get("seller_confirmed_at"),
+            dispute_opened_at=data.get("dispute_opened_at"),
+            dispute_reason=data.get("dispute_reason"),
+            admin_notes=data.get("admin_notes"),
+            commission_amount=data.get("commission_amount", 0.0),
+            created_at=data.get("created_at"),
+            completed_at=data.get("completed_at"),
+        )
+
+
+class ServiceCreditTopup:
+    """מודל טעינת קרדיט שירות למוכרים"""
+    
+    def __init__(
+        self,
+        seller_id: int,
+        amount_paid_ils: float,  # כמה שילם באמת בשקלים
+        credit_received: float,  # כמה קרדיט קיבל (כולל בונוס)
+        payment_method: TopupPaymentMethod,
+        platform_fee: float = 0.0,  # כמה הפלטפורמה (טלגרם/משולם) לקחה
+        our_net_revenue: float = 0.0,  # כמה באמת נכנס לנו
+        reference_code: Optional[str] = None,
+        payment_proof_image: Optional[str] = None,
+        status: str = "pending",  # pending, approved, rejected
+        approved_by: Optional[int] = None,
+        created_at: Optional[datetime] = None,
+        processed_at: Optional[datetime] = None,
+        _id: Optional[ObjectId] = None,
+    ):
+        self._id = _id
+        self.seller_id = seller_id
+        self.amount_paid_ils = amount_paid_ils
+        self.credit_received = credit_received
+        self.payment_method = payment_method
+        self.platform_fee = platform_fee
+        self.our_net_revenue = our_net_revenue
+        self.reference_code = reference_code
+        self.payment_proof_image = payment_proof_image
+        self.status = status
+        self.approved_by = approved_by
+        self.created_at = created_at or datetime.utcnow()
+        self.processed_at = processed_at
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """המרה ל-dict"""
+        data = {
+            "seller_id": self.seller_id,
+            "amount_paid_ils": self.amount_paid_ils,
+            "credit_received": self.credit_received,
+            "payment_method": self.payment_method.value if isinstance(self.payment_method, Enum) else self.payment_method,
+            "platform_fee": self.platform_fee,
+            "our_net_revenue": self.our_net_revenue,
+            "reference_code": self.reference_code,
+            "payment_proof_image": self.payment_proof_image,
+            "status": self.status,
+            "approved_by": self.approved_by,
+            "created_at": self.created_at,
+            "processed_at": self.processed_at,
+        }
+        if self._id:
+            data["_id"] = self._id
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ServiceCreditTopup":
+        """יצירה מ-dict"""
+        return cls(
+            _id=data.get("_id"),
+            seller_id=data["seller_id"],
+            amount_paid_ils=data["amount_paid_ils"],
+            credit_received=data["credit_received"],
+            payment_method=TopupPaymentMethod(data.get("payment_method", "external_link")),
+            platform_fee=data.get("platform_fee", 0.0),
+            our_net_revenue=data.get("our_net_revenue", 0.0),
+            reference_code=data.get("reference_code"),
+            payment_proof_image=data.get("payment_proof_image"),
+            status=data.get("status", "pending"),
+            approved_by=data.get("approved_by"),
+            created_at=data.get("created_at"),
+            processed_at=data.get("processed_at"),
         )
 
 

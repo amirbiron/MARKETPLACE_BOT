@@ -46,6 +46,9 @@ class Database:
         self.seller_analytics: Optional[AsyncIOMotorCollection] = None
         self.seller_alert_settings: Optional[AsyncIOMotorCollection] = None
         self.scheduled_coupons: Optional[AsyncIOMotorCollection] = None
+        # === Classifieds Model Collections ===
+        self.p2p_orders: Optional[AsyncIOMotorCollection] = None
+        self.service_credit_topups: Optional[AsyncIOMotorCollection] = None
         
     async def connect(self):
         """Connect to MongoDB"""
@@ -81,6 +84,9 @@ class Database:
             self.seller_analytics = self.db["seller_analytics"]
             self.seller_alert_settings = self.db["seller_alert_settings"]
             self.scheduled_coupons = self.db["scheduled_coupons"]
+            # === Classifieds Model Collections ===
+            self.p2p_orders = self.db["p2p_orders"]
+            self.service_credit_topups = self.db["service_credit_topups"]
             
             # Test connection
             await self.client.admin.command('ping')
@@ -275,6 +281,25 @@ class Database:
             await self.scheduled_coupons.create_indexes([
                 IndexModel([("seller_id", ASCENDING), ("status", ASCENDING)]),
                 IndexModel([("status", ASCENDING), ("scheduled_at", ASCENDING)]),
+            ])
+
+            # === Classifieds Model Indexes ===
+            
+            # P2P orders indexes
+            await self.p2p_orders.create_indexes([
+                IndexModel([("buyer_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("seller_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("seller_confirmation_deadline", ASCENDING)]),  # for timeout queries
+                IndexModel([("coupon_id", ASCENDING)]),
+            ])
+
+            # Service credit topups indexes
+            await self.service_credit_topups.create_indexes([
+                IndexModel([("seller_id", ASCENDING), ("created_at", DESCENDING)]),
+                IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+                IndexModel([("reference_code", ASCENDING)], sparse=True),
+                IndexModel([("payment_method", ASCENDING), ("status", ASCENDING)]),
             ])
             
             logger.info("Database indexes created successfully")
@@ -863,3 +888,15 @@ async def get_seller_alert_settings_collection() -> AsyncIOMotorCollection:
 async def get_scheduled_coupons_collection() -> AsyncIOMotorCollection:
     await _ensure_connected()
     return db.scheduled_coupons
+
+
+# === Classifieds Model Collection Helpers ===
+
+async def get_p2p_orders_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.p2p_orders
+
+
+async def get_service_credit_topups_collection() -> AsyncIOMotorCollection:
+    await _ensure_connected()
+    return db.service_credit_topups

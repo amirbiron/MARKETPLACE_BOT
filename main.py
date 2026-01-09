@@ -29,6 +29,7 @@ from handlers.admin_forum_chat_handlers import get_admin_forum_chat_handlers
 from handlers.dispute_handlers import get_dispute_handlers
 from handlers.payment_handlers import get_payment_handlers
 from handlers.support_handlers import get_support_handlers
+from handlers.p2p_handlers import P2PHandlers, P2P_WAITING_PAYMENT_PROOF
 from services.health_server import start_health_server
 from services.service_lock import LockSettings, MongoServiceLock
 
@@ -1351,6 +1352,69 @@ def main():
     # Scheduled Coupons
     application.add_handler(CallbackQueryHandler(SellerHandlers.show_scheduled_list, pattern="^products_scheduled_list$"))
     application.add_handler(CallbackQueryHandler(SellerHandlers.cancel_scheduled_coupon, pattern="^scheduled_cancel_"))
+    
+    # ==================== Classifieds Model - Seller Credit Management ====================
+    
+    # Seller credit menu
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_seller_credit_menu, pattern="^seller_credit_menu$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_seller_credit_menu, pattern="^topup_credit$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.show_topup_amounts, pattern="^topup_amounts$"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.select_topup_amount, pattern="^topup_amount_"))
+    application.add_handler(CallbackQueryHandler(SellerHandlers.process_topup_external, pattern="^topup_method_external_"))
+    
+    # Payment method setup conversation
+    application.add_handler(CallbackQueryHandler(SellerHandlers.setup_payment_methods, pattern="^setup_payment_methods$"))
+    
+    # Bit setup conversation handler
+    bit_setup_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(SellerHandlers.setup_bit_start, pattern="^setup_bit$")],
+        states={
+            "SETUP_BIT": [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.process_bit_setup)],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(bit_setup_conv)
+    
+    # Paybox setup conversation handler
+    paybox_setup_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(SellerHandlers.setup_paybox_start, pattern="^setup_paybox$")],
+        states={
+            "SETUP_PAYBOX": [MessageHandler(filters.TEXT & ~filters.COMMAND, SellerHandlers.process_paybox_setup)],
+        },
+        fallbacks=[CommandHandler("cancel", _cancel_conv)],
+        allow_reentry=True,
+    )
+    application.add_handler(paybox_setup_conv)
+    
+    # ==================== Classifieds Model - P2P Purchase Flow ====================
+    
+    # P2P purchase conversation handler
+    p2p_purchase_conv = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(P2PHandlers.select_payment_method, pattern="^p2p_method_(bit|paybox)_"),
+        ],
+        states={
+            P2P_WAITING_PAYMENT_PROOF: [
+                MessageHandler(filters.PHOTO | filters.Document.IMAGE, P2PHandlers.receive_payment_proof),
+                CommandHandler("cancel", P2PHandlers.cancel_p2p_purchase),
+            ],
+        },
+        fallbacks=[CommandHandler("cancel", P2PHandlers.cancel_p2p_purchase)],
+        allow_reentry=True,
+    )
+    application.add_handler(p2p_purchase_conv)
+    
+    # P2P start purchase (show seller payment details)
+    application.add_handler(CallbackQueryHandler(P2PHandlers.start_p2p_purchase, pattern="^p2p_buy_"))
+    
+    # P2P seller confirmation/dispute
+    application.add_handler(CallbackQueryHandler(P2PHandlers.seller_confirm_payment, pattern="^p2p_confirm_"))
+    application.add_handler(CallbackQueryHandler(P2PHandlers.seller_dispute_payment, pattern="^p2p_dispute_"))
+    
+    # P2P admin actions
+    application.add_handler(CallbackQueryHandler(P2PHandlers.admin_release_coupon, pattern="^p2p_admin_release_"))
+    application.add_handler(CallbackQueryHandler(P2PHandlers.admin_reject_payment, pattern="^p2p_admin_reject_"))
     
     # Settings callbacks
     application.add_handler(CallbackQueryHandler(settings_callback_handler, pattern="^settings_"))

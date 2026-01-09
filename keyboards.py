@@ -5,6 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMa
 from typing import List, Tuple
 from models import UserRole
 from services.coupon_service import CouponService
+from config import Config
 
 
 class Keyboards:
@@ -44,10 +45,19 @@ class Keyboards:
                 InlineKeyboardButton("📦 העלאת קופון", callback_data="menu_upload_coupon"),
                 InlineKeyboardButton("📊 המכירות שלי", callback_data="menu_my_sales")
             ])
-            keyboard.append([
-                InlineKeyboardButton("💸 משיכת כספים", callback_data="menu_withdraw"),
-                InlineKeyboardButton("📈 סטטיסטיקות", callback_data="menu_stats")
-            ])
+            
+            # במודל Classifieds - כפתור קרדיט שירות במקום משיכת כספים
+            if Config.CLASSIFIEDS_MODEL_ENABLED:
+                keyboard.append([
+                    InlineKeyboardButton("💰 קרדיט שירות", callback_data="seller_credit_menu"),
+                    InlineKeyboardButton("📈 סטטיסטיקות", callback_data="menu_stats")
+                ])
+            else:
+                keyboard.append([
+                    InlineKeyboardButton("💸 משיכת כספים", callback_data="menu_withdraw"),
+                    InlineKeyboardButton("📈 סטטיסטיקות", callback_data="menu_stats")
+                ])
+            
             keyboard.append([
                 InlineKeyboardButton("🎯 דשבורד מתקדם", callback_data="seller_dashboard")
             ])
@@ -109,8 +119,9 @@ class Keyboards:
         keyboard = []
         
         if current_user_id != seller_id:
+            # במודל P2P החדש - כפתור רכישה שונה
             keyboard.append([
-                InlineKeyboardButton("💳 קנה עכשיו", callback_data=f"buy_{coupon_id}")
+                InlineKeyboardButton("💳 קנה עכשיו (P2P)", callback_data=f"p2p_buy_{coupon_id}")
             ])
             
             if is_favorite:
@@ -1053,3 +1064,143 @@ class Keyboards:
             display += f"  יום {item['day']} - {item['sales']} מכירות\n"
         
         return display
+
+    # ==================== Classifieds Model (P2P) Keyboards ====================
+
+    @staticmethod
+    def seller_credit_menu_keyboard(balance: float, can_publish: bool) -> InlineKeyboardMarkup:
+        """מקלדת תפריט קרדיט שירות למוכר"""
+        keyboard = []
+        
+        # תצוגת יתרה
+        status_icon = "✅" if can_publish else "⚠️"
+        
+        keyboard.extend([
+            [InlineKeyboardButton("➕ טען קרדיט שירות", callback_data="topup_credit")],
+            [InlineKeyboardButton("📊 היסטוריית טעינות", callback_data="topup_history")],
+            [InlineKeyboardButton("💳 הגדר אמצעי תשלום", callback_data="setup_payment_methods")],
+            [InlineKeyboardButton("📈 סטטיסטיקות קרדיט", callback_data="credit_stats")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def topup_amounts_keyboard() -> InlineKeyboardMarkup:
+        """מקלדת בחירת סכום לטעינת קרדיט"""
+        from config import Config
+        
+        keyboard = [
+            [InlineKeyboardButton("💰 ₪20 → 25 נקודות (25% בונוס)", callback_data="topup_amount_20")],
+            [InlineKeyboardButton("💰 ₪50 → 55 נקודות (10% בונוס)", callback_data="topup_amount_50")],
+            [InlineKeyboardButton("💰 ₪100 → 120 נקודות (20% בונוס)", callback_data="topup_amount_100")],
+            [InlineKeyboardButton("💰 ₪200 → 260 נקודות (30% בונוס)", callback_data="topup_amount_200")],
+            [InlineKeyboardButton("💵 סכום אחר", callback_data="topup_custom")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="seller_credit_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def topup_payment_method_keyboard(amount: float) -> InlineKeyboardMarkup:
+        """מקלדת בחירת אמצעי תשלום לטעינה"""
+        keyboard = [
+            [InlineKeyboardButton(
+                "💳 לינק תשלום חיצוני (משולם) ⭐ מומלץ\n🎁 +25% בונוס!",
+                callback_data=f"topup_method_external_{amount}"
+            )],
+            [InlineKeyboardButton(
+                "🌟 Telegram Stars\n⚠️ עמלה 30%",
+                callback_data=f"topup_method_stars_{amount}"
+            )],
+            [InlineKeyboardButton(
+                "₿ קריפטו\n🎁 +50% בונוס!",
+                callback_data=f"topup_method_crypto_{amount}"
+            )],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="topup_credit")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def setup_payment_methods_keyboard(current_methods: dict) -> InlineKeyboardMarkup:
+        """מקלדת הגדרת אמצעי תשלום למוכר"""
+        bit_status = "✅" if current_methods.get("bit") else "❌"
+        paybox_status = "✅" if current_methods.get("paybox") else "❌"
+        
+        keyboard = [
+            [InlineKeyboardButton(f"{bit_status} ביט: {current_methods.get('bit', 'לא הוגדר')}", callback_data="setup_bit")],
+            [InlineKeyboardButton(f"{paybox_status} פייבוקס: {'הוגדר' if current_methods.get('paybox') else 'לא הוגדר'}", callback_data="setup_paybox")],
+            [InlineKeyboardButton("🔙 חזרה", callback_data="seller_credit_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def p2p_order_buyer_keyboard(order_id: str) -> InlineKeyboardMarkup:
+        """מקלדת לקונה - צפייה בסטטוס הזמנה P2P"""
+        keyboard = [
+            [InlineKeyboardButton("🔄 רענן סטטוס", callback_data=f"p2p_refresh_{order_id}")],
+            [InlineKeyboardButton("💬 צ'אט עם המוכר", callback_data=f"chat_p2p_{order_id}")],
+            [InlineKeyboardButton("🔙 חזרה לתפריט", callback_data="main_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def p2p_order_seller_confirm_keyboard(order_id: str) -> InlineKeyboardMarkup:
+        """מקלדת למוכר - אישור קבלת תשלום"""
+        keyboard = [
+            [InlineKeyboardButton("✅ קיבלתי תשלום - אשר", callback_data=f"p2p_confirm_{order_id}")],
+            [InlineKeyboardButton("❌ לא קיבלתי - מחלוקת", callback_data=f"p2p_dispute_{order_id}")],
+            [InlineKeyboardButton("💬 צ'אט עם הקונה", callback_data=f"chat_p2p_{order_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def p2p_admin_dispute_keyboard(order_id: str) -> InlineKeyboardMarkup:
+        """מקלדת לאדמין - טיפול במחלוקת P2P"""
+        keyboard = [
+            [InlineKeyboardButton("✅ תשלום תקין - שחרר קופון + קנס למוכר", callback_data=f"p2p_admin_release_{order_id}")],
+            [InlineKeyboardButton("❌ תשלום מזויף - חסום קונה", callback_data=f"p2p_admin_reject_{order_id}")],
+            [InlineKeyboardButton("📋 פרטי הזמנה", callback_data=f"p2p_order_details_{order_id}")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def admin_topup_request_keyboard(topup_id: str) -> InlineKeyboardMarkup:
+        """מקלדת אדמין - אישור/דחיית בקשת טעינת קרדיט"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ אשר טעינה", callback_data=f"approve_topup_{topup_id}"),
+                InlineKeyboardButton("❌ דחה", callback_data=f"reject_topup_{topup_id}")
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def credit_display(balance: float, can_publish: bool, estimated_sales: int) -> str:
+        """תצוגת קרדיט שירות"""
+        status_icon = "✅" if can_publish else "⚠️"
+        
+        return f"""
+💰 *קרדיט שירות*
+
+{status_icon} יתרה: *{balance:.2f} נקודות*
+🛒 מספיק ל-~{estimated_sales} מכירות נוספות
+
+📌 מינימום לפרסום: 10 נקודות
+📌 עמלה למכירה: 5%
+
+⚠️ *שים לב:* קרדיט שירות הוא קרדיט דיגיטלי לתשלום עמלות בלבד ואינו ניתן להחזר כספי.
+"""
+
+    @staticmethod
+    def p2p_order_status_display(status: str) -> str:
+        """המרת סטטוס הזמנה P2P לתצוגה"""
+        status_map = {
+            "pending_buyer_payment": "⏳ ממתין לתשלום הקונה",
+            "pending_seller_confirmation": "🔔 ממתין לאישור המוכר",
+            "auto_dispute": "⚠️ מחלוקת אוטומטית (timeout)",
+            "manual_dispute": "⚠️ במחלוקת",
+            "completed": "✅ הושלם",
+            "cancelled": "❌ בוטל",
+            "refunded": "↩️ הוחזר"
+        }
+        return status_map.get(status, status)
